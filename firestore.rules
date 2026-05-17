@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128;
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt'])
+      );
+    }
+
+    // 2. Tasks Collection
+    match /tasks/{taskId} {
+      function isValidTask(data) {
+        return data.taskNum is string && data.taskNum.size() >= 10 &&
+               data.content is string && data.content.size() <= 1000 &&
+               data.reward is string && data.reward.size() <= 200 &&
+               data.location is string && data.location.size() <= 300 &&
+               data.contact is string && data.contact.size() <= 200 &&
+               data.deadlineStart is string &&
+               data.deadlineEnd is string &&
+               data.requesterId == request.auth.uid &&
+               data.requesterName is string &&
+               data.status in ['open', 'accepted', 'completed'];
+      }
+
+      allow list: if true;
+      allow get: if true;
+      allow create: if isSignedIn() && isValidTask(request.resource.data) && 
+                      request.resource.data.createdAt == request.time;
+      
+      allow update: if isSignedIn() && (
+        // Action: Accept Task
+        (
+          resource.data.status == 'open' &&
+          request.resource.data.status == 'accepted' &&
+          request.resource.data.acceptorId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
+        ) ||
+        // Action: Cancel Accept (by acceptor)
+        (
+          resource.data.status == 'accepted' &&
+          resource.data.acceptorId == request.auth.uid &&
+          request.resource.data.status == 'open' &&
+          !('acceptorId' in request.resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
+        ) ||
+        // Action: Complete Task
+        (
+          resource.data.status == 'accepted' &&
+          resource.data.acceptorId == request.auth.uid &&
+          request.resource.data.status == 'completed' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        ) ||
+        // Owner Update (simple edit)
+        (
+          isOwner(resource.data.requesterId) &&
+          resource.data.status == 'open' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'reward', 'location', 'contact', 'deadlineStart', 'deadlineEnd', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isOwner(resource.data.requesterId);
+    }
+
+    // 3. Broadcasts Collection
+    match /broadcasts/{broadcastId} {
+      allow read: if true;
+      allow create: if isSignedIn() && 
+                      request.resource.data.content is string && 
+                      request.resource.data.content.size() <= 100 &&
+                      request.resource.data.creatorId == request.auth.uid &&
+                      request.resource.data.userName is string &&
+                      request.resource.data.activeUntil > request.time;
+    }
+  }
+}

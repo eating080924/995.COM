@@ -1,0 +1,6 @@
+{
+  "name": "出事啦 995.COM",
+  "description": "提供任務互助、生活雜事承接的 PWA 平台，包含即時廣播功能與任務追蹤系統。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

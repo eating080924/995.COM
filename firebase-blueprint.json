@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A chore or task that needs to be completed.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string", "description": "Description of the task" },
+        "reward": { "type": "string", "description": "Reward for completing the task" },
+        "deadline": { "type": "string", "format": "date-time", "description": "When the task must be finished" },
+        "location": { "type": "string", "description": "Where the task is located" },
+        "contact": { "type": "string", "description": "Contact information for the requester" },
+        "status": { "type": "string", "enum": ["open", "accepted", "completed"], "description": "Current status of the task" },
+        "requesterId": { "type": "string", "description": "UID of the user who created the task" },
+        "acceptorId": { "type": "string", "description": "UID of the user who accepted the task" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when created" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Timestamp when last updated" }
+      },
+      "required": ["content", "reward", "deadline", "location", "contact", "status", "requesterId", "createdAt"]
+    },
+    "Broadcast": {
+      "title": "Broadcast",
+      "description": "Short scrolling message shown to all users.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string", "description": "Message content" },
+        "creatorId": { "type": "string", "description": "UID of the user who posted the broadcast" },
+        "activeUntil": { "type": "string", "format": "date-time", "description": "When the broadcast expires" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Timestamp when created" }
+      },
+      "required": ["content", "creatorId", "activeUntil", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User profile information.",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "createdAt"]
+    }
+  },
+  "firestore": {
+    "tasks": {
+      "schema": "Task",
+      "description": "Collection of all help requests."
+    },
+    "broadcasts": {
+      "schema": "Broadcast",
+      "description": "Collection of active broadcast messages."
+    },
+    "users": {
+      "schema": "User",
+      "description": "User profiles."
+    }
+  }
+}
