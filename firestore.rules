@@ -28,6 +28,21 @@ service cloud.firestore {
       );
     }
 
+    function isExpired(deadline, delay) {
+      // Robust check for both Timestamp and string formats
+      let d = deadline is timestamp ? deadline : 
+              (deadline is string && deadline.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$') ? timestamp.value(deadline + ':00Z') : 
+               (deadline is string && deadline.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$') ? timestamp.value(deadline) : 
+                (deadline is string && deadline.matches('^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+Z$') ? timestamp.value(deadline) : 
+                 timestamp.value('2099-12-31T23:59:59Z'))));
+      
+      // For legacy strings that might be local time, we allow a buffer to account for timezone differences (up to 14 hours)
+      // This ensures that cleanup can proceed even if the rule's UTC interpretation is ahead/behind the user's local time.
+      let timezoneBuffer = (deadline is string && !deadline.matches('.*Z$')) ? duration.value(14, 'h') : duration.value(0, 's');
+      
+      return request.time > (d - timezoneBuffer) + duration.value(delay, 's');
+    }
+
     // 2. Tasks Collection
     match /tasks/{taskId} {
       function isValidTask(data) {
@@ -36,8 +51,8 @@ service cloud.firestore {
                data.reward is string && data.reward.size() <= 200 &&
                data.location is string && data.location.size() <= 300 &&
                data.contact is string && data.contact.size() <= 200 &&
-               data.deadlineStart is string &&
-               data.deadlineEnd is string &&
+               (data.deadlineStart is timestamp || data.deadlineStart is string) &&
+               (data.deadlineEnd is timestamp || data.deadlineEnd is string) &&
                data.requesterId == request.auth.uid &&
                data.requesterName is string &&
                data.status in ['open', 'accepted', 'completed'];
@@ -64,11 +79,11 @@ service cloud.firestore {
           !('acceptorId' in request.resource.data) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
         ) ||
-        // Action: Complete Task
+        // Action: Complete Task (by owner OR public cleanup)
         (
           resource.data.status == 'accepted' &&
-          resource.data.acceptorId == request.auth.uid &&
           request.resource.data.status == 'completed' &&
+          (isOwner(resource.data.requesterId) || isExpired(resource.data.deadlineEnd, 0)) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
         ) ||
         // Owner Update (simple edit)
@@ -79,7 +94,11 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isOwner(resource.data.requesterId);
+      allow delete: if isOwner(resource.data.requesterId) || (
+        // Public Cleanup: Open tasks older than 3 days
+        resource.data.status == 'open' && 
+        isExpired(resource.data.createdAt, 259200) // 3 days in seconds
+      );
     }
 
     // 3. Broadcasts Collection

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
@@ -23,12 +23,25 @@ interface FormData {
 
 export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   const { user } = useAuth();
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const formatForInput = (dateValue: any) => {
+    if (!dateValue) return '';
+    const date = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
+    // Correctly format to YYYY-MM-DDTHH:mm for datetime-local input
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  };
+
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: taskToEdit ? {
       content: taskToEdit.content,
       reward: taskToEdit.reward,
-      deadlineStart: taskToEdit.deadlineStart,
-      deadlineEnd: taskToEdit.deadlineEnd,
+      deadlineStart: formatForInput(taskToEdit.deadlineStart),
+      deadlineEnd: formatForInput(taskToEdit.deadlineEnd),
       location: taskToEdit.location,
       contact: taskToEdit.contact,
     } : {
@@ -52,15 +65,20 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
     if (!user) return;
 
     try {
+      setSubmitError(null);
       if (taskToEdit) {
         const taskRef = doc(db, 'tasks', taskToEdit.id);
         await updateDoc(taskRef, {
           ...data,
+          deadlineStart: Timestamp.fromDate(new Date(data.deadlineStart)),
+          deadlineEnd: Timestamp.fromDate(new Date(data.deadlineEnd)),
           updatedAt: serverTimestamp()
         });
       } else {
         await addDoc(collection(db, 'tasks'), {
           ...data,
+          deadlineStart: Timestamp.fromDate(new Date(data.deadlineStart)),
+          deadlineEnd: Timestamp.fromDate(new Date(data.deadlineEnd)),
           taskNum: generateTaskNum(),
           status: 'open',
           requesterId: user.uid,
@@ -70,8 +88,17 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
         });
       }
       onClose();
-    } catch (error) {
-      handleFirestoreError(error, taskToEdit ? OperationType.UPDATE : OperationType.CREATE, 'tasks');
+    } catch (error: any) {
+      try {
+        handleFirestoreError(error, taskToEdit ? OperationType.UPDATE : OperationType.CREATE, 'tasks');
+      } catch (e) {
+        console.error('Firestore operation failed:', e);
+      }
+      const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+      setSubmitError(isOffline 
+        ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+        : `發布失敗：${error?.message || '未知錯誤'}`
+      );
     }
   };
 
@@ -147,6 +174,12 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
             />
             {errors.contact && <p className="text-red-500 text-xs mt-1">{errors.contact.message}</p>}
           </div>
+
+          {submitError && (
+            <div className="bg-red-50 text-red-600 text-xs font-semibold p-3.5 rounded-xl border border-red-100">
+              {submitError}
+            </div>
+          )}
 
           <button
             type="submit"

@@ -9,15 +9,16 @@ import { cn } from '../lib/utils';
 
 export function BroadcastMarquee() {
   const [broadcasts, setBroadcasts] = useState<Broadcast[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const DEFAULT_MESSAGE = "歡迎使用出事啦 995.COM —— 互助互惠，共創溫暖社區！";
+  const [shownIds, setShownIds] = useState<Set<string>>(new Set());
+  const [activeBroadcast, setActiveBroadcast] = useState<Broadcast | null>(null);
+  const DEFAULT_MESSAGE = "歡迎使用 995 委託板 —— 互助互惠，世界和平！";
 
   useEffect(() => {
     const now = Timestamp.now();
     const q = query(
       collection(db, 'broadcasts'),
       where('activeUntil', '>', now),
-      orderBy('activeUntil', 'asc')
+      orderBy('createdAt', 'asc') // Show older ones first
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -25,42 +26,40 @@ export function BroadcastMarquee() {
         id: doc.id,
         ...doc.data()
       })) as Broadcast[];
-
-      setBroadcasts(prevDocs => {
-        const prevIds = prevDocs.map(d => d.id).join(',');
-        const nextIds = docs.map(d => d.id).join(',');
-        if (prevIds !== nextIds) {
-          setCurrentIndex(0);
-          return docs;
-        }
-        return prevDocs;
-      });
+      setBroadcasts(docs);
+    }, (error) => {
+      console.warn('BroadcastMarquee onSnapshot subscription error (client may be offline/connecting):', error);
     });
 
     return () => unsubscribe();
   }, []);
 
-  // Cycle through broadcasts + default message
-  const displayItems = broadcasts.length > 0 ? [...broadcasts, null] : [null];
-
   useEffect(() => {
-    if (displayItems.length <= 1) return;
+    // Find the first broadcast that hasn't been shown yet
+    const nextUnseen = broadcasts.find(b => !shownIds.has(b.id));
 
-    const timer = setInterval(() => {
-      setCurrentIndex((prev) => (prev + 1) % displayItems.length);
-    }, 10000);
+    if (nextUnseen) {
+      setActiveBroadcast(nextUnseen);
+      
+      const timer = setTimeout(() => {
+        setShownIds(prev => new Set(prev).add(nextUnseen.id));
+        setActiveBroadcast(null);
+      }, 10000);
 
-    return () => clearInterval(timer);
-  }, [displayItems.length]);
+      return () => clearTimeout(timer);
+    } else {
+      setActiveBroadcast(null);
+    }
+  }, [broadcasts, shownIds]);
 
-  const currentItem = displayItems[currentIndex];
+  const currentItem = activeBroadcast;
 
   return (
     <div className="bg-red-600 text-white py-3 shadow-lg relative overflow-hidden transition-colors">
       <div className="max-w-7xl mx-auto px-4 flex items-center gap-4">
         <div className="flex items-center gap-2 bg-red-700 px-3 py-1 rounded-full text-xs font-black uppercase tracking-tighter shrink-0">
           <Megaphone size={14} className="fill-current animate-bounce" />
-          <span>緊急廣播</span>
+          <span>廣播</span>
         </div>
         
         <div className="flex-1 overflow-hidden relative min-h-[1.5rem] flex items-center">
@@ -85,14 +84,14 @@ export function BroadcastMarquee() {
           </AnimatePresence>
         </div>
 
-        {displayItems.length > 1 && (
+        {broadcasts.length > 0 && (
           <div className="flex gap-1 shrink-0">
-            {displayItems.map((_, i) => (
+            {broadcasts.map((b) => (
               <div 
-                key={i} 
+                key={b.id} 
                 className={cn(
                   "w-1.5 h-1.5 rounded-full transition-all",
-                  i === currentIndex ? "bg-white scale-125 shadow-glow" : "bg-white/30"
+                  currentItem?.id === b.id ? "bg-white scale-125 shadow-glow" : (shownIds.has(b.id) ? "bg-white/10" : "bg-white/40")
                 )} 
               />
             ))}

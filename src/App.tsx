@@ -11,27 +11,53 @@ import { TaskList } from './components/TaskList';
 import { TaskForm } from './components/TaskForm';
 import { BroadcastForm } from './components/BroadcastForm';
 import { Sparkles, PlusCircle, User as UserIcon, Search } from 'lucide-react';
+import { ConfirmDialog } from './components/ConfirmDialog';
+import { performTaskCleanup } from './lib/taskCleanup';
+import { LoginModal } from './components/LoginModal';
 
 function AppContent() {
   const { user } = useAuth();
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBroadcastForm, setShowBroadcastForm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'my-tasks'>('all');
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'all' | 'open' | 'accepted' | 'my-tasks'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [alertConfig, setAlertConfig] = useState<{
+    title: string;
+    message: string;
+  } | null>(null);
 
   React.useEffect(() => {
-    if (!user) {
-      setActiveTab('all');
+    // Run task cleanup when user logs in
+    if (user) {
+      performTaskCleanup(user.uid);
     }
   }, [user]);
+
+  React.useEffect(() => {
+    if (!user && activeTab === 'my-tasks') {
+      setActiveTab('all');
+    }
+  }, [user, activeTab]);
+
+  const requireLogin = (action: () => void) => {
+    if (user) {
+      action();
+    } else {
+      setAlertConfig({
+        title: '請先登入',
+        message: '在使用委託任務或廣播功能之前，請先登入您的帳戶。'
+      });
+    }
+  };
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans overflow-x-hidden">
       <Navbar 
-        onNewTask={() => user ? setShowTaskForm(true) : alert('請先登入')} 
-        onNewBroadcast={() => user ? setShowBroadcastForm(true) : alert('請先登入')}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        onNewTask={() => requireLogin(() => setShowTaskForm(true))} 
+        onNewBroadcast={() => requireLogin(() => setShowBroadcastForm(true))}
+        activeTab={activeTab === 'my-tasks' ? 'my-tasks' : 'all'}
+        setActiveTab={(tab) => setActiveTab(tab as any)}
       />
       
       <BroadcastMarquee />
@@ -41,20 +67,34 @@ function AppContent() {
         <aside className="md:col-span-3 space-y-6">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">功能選單</h3>
-            <div className="space-y-2">
+            <div className="space-y-1">
               <button 
                 onClick={() => setActiveTab('all')}
-                className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'all' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'all' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
                 全部任務
               </button>
+              <button 
+                onClick={() => setActiveTab('open')}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'open' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+              >
+                開放中
+              </button>
+              <button 
+                onClick={() => setActiveTab('accepted')}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'accepted' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+              >
+                進行中
+              </button>
               {user && (
-                <button 
-                  onClick={() => setActiveTab('my-tasks')}
-                  className={`w-full text-left px-4 py-3 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
-                >
-                  我的任務
-                </button>
+                <div className="pt-2 mt-2 border-t border-slate-100">
+                  <button 
+                    onClick={() => setActiveTab('my-tasks')}
+                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    個人委託
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -64,7 +104,7 @@ function AppContent() {
               <h4 className="text-xs font-bold opacity-60 uppercase mb-1 tracking-wider">推廣您的需求</h4>
               <p className="text-sm font-medium mb-5 leading-relaxed">想要任務更快完成？使用廣播功能讓全站看見！</p>
               <button 
-                onClick={() => user ? setShowBroadcastForm(true) : alert('請先登入')}
+                onClick={() => requireLogin(() => setShowBroadcastForm(true))}
                 className="w-full py-3 bg-amber-400 text-slate-900 rounded-xl text-xs font-black uppercase tracking-wider hover:bg-amber-500 transition-colors transform active:scale-95 shadow-lg"
               >
                 立 即 發 佈 廣 播
@@ -76,7 +116,7 @@ function AppContent() {
           </div>
           
           <div className="hidden md:block p-4">
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest text-center">© 2026 出事啦 995.COM</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest text-center">© 2026 995 委託板</p>
           </div>
         </aside>
 
@@ -100,14 +140,6 @@ function AppContent() {
                 </div>
               )}
             </div>
-            
-            <div className="flex items-center gap-3 self-end sm:self-auto">
-              <span className="text-xs font-bold text-slate-400 uppercase">排序</span>
-              <select className="bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-xs font-bold text-slate-700 outline-none cursor-pointer focus:ring-2 focus:ring-red-100">
-                <option>最新優先</option>
-                <option>酬勞最高</option>
-              </select>
-            </div>
           </div>
 
           <TaskList filter={activeTab} searchQuery={searchQuery} />
@@ -116,8 +148,8 @@ function AppContent() {
 
       {/* PWA style Bottom Nav for mobile */}
       <nav className="md:hidden bg-white border-t border-slate-200 flex justify-around items-center h-20 sticky bottom-0 z-40 px-2 pb-safe">
-        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'all' ? 'text-red-500' : 'text-slate-400'}`}>
-          <Sparkles size={22} fill={activeTab === 'all' ? 'currentColor' : 'none'} />
+        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${activeTab !== 'my-tasks' ? 'text-red-500' : 'text-slate-400'}`}>
+          <Sparkles size={22} fill={activeTab !== 'my-tasks' ? 'currentColor' : 'none'} />
           <span className="text-[10px] font-bold">主頁</span>
         </button>
         <div className="flex flex-col items-center gap-1 group relative">
@@ -130,7 +162,7 @@ function AppContent() {
           <span className="text-[10px] font-bold text-slate-400">發佈</span>
         </div>
         <button 
-          onClick={() => user ? setActiveTab('my-tasks') : alert('請先登入')} 
+          onClick={() => requireLogin(() => setActiveTab('my-tasks'))} 
           className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'my-tasks' ? 'text-red-500' : 'text-slate-400'}`}
         >
           <UserIcon size={22} fill={activeTab === 'my-tasks' ? 'currentColor' : 'none'} />
@@ -145,6 +177,23 @@ function AppContent() {
       {showBroadcastForm && (
         <BroadcastForm onClose={() => setShowBroadcastForm(false)} />
       )}
+
+      {alertConfig && (
+        <ConfirmDialog
+          isOpen={true}
+          title={alertConfig.title}
+          message={alertConfig.message}
+          onConfirm={() => {
+            setAlertConfig(null);
+            setShowLoginModal(true);
+          }}
+          onCancel={() => setAlertConfig(null)}
+          cancelText="關閉"
+          confirmText="立即登入"
+        />
+      )}
+
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </div>
   );
 }

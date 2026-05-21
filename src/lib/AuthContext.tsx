@@ -3,6 +3,7 @@ import {
   onAuthStateChanged, 
   signInWithPopup, 
   GoogleAuthProvider, 
+  FacebookAuthProvider,
   signOut, 
   User 
 } from 'firebase/auth';
@@ -12,7 +13,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  signIn: () => Promise<void>;
+  signIn: (providerType?: 'google' | 'facebook') => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -25,16 +26,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Sync user profile to Firestore
-        const userRef = doc(db, 'users', firebaseUser.uid);
-        const userDoc = await getDoc(userRef);
-        
-        if (!userDoc.exists()) {
-          await setDoc(userRef, {
-            displayName: firebaseUser.displayName || '匿名用戶',
-            photoURL: firebaseUser.photoURL,
-            createdAt: serverTimestamp(),
-          });
+        try {
+          // Sync user profile to Firestore
+          const userRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userRef);
+          
+          if (!userDoc.exists()) {
+            await setDoc(userRef, {
+              displayName: firebaseUser.displayName || '匿名用戶',
+              photoURL: firebaseUser.photoURL,
+              createdAt: serverTimestamp(),
+            });
+          }
+        } catch (error) {
+          console.warn('Firestore profile sync skipped/failed (offline mode or permission issue):', error);
         }
         setUser(firebaseUser);
       } else {
@@ -46,12 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const signIn = async () => {
-    const provider = new GoogleAuthProvider();
+  const signIn = async (providerType: 'google' | 'facebook' = 'google') => {
+    const provider = providerType === 'facebook' 
+      ? new FacebookAuthProvider() 
+      : new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error('Sign in error:', error);
+      console.error(`${providerType} Sign in error:`, error);
     }
   };
 

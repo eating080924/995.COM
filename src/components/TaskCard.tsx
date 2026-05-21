@@ -4,84 +4,215 @@ import { cn, formatTimeAgo } from '../lib/utils';
 import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
-import { doc, updateDoc, deleteDoc, serverTimestamp, deleteField } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { TaskForm } from './TaskForm';
+import { ConfirmDialog } from './ConfirmDialog';
 
 export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const { user } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    variant?: 'danger' | 'primary';
+    showCancel?: boolean;
+  } | null>(null);
 
   const handleAccept = async () => {
     if (!user) return;
-    try {
-      const taskRef = doc(db, 'tasks', task.id);
-      await updateDoc(taskRef, {
-        status: 'accepted',
-        acceptorId: user.uid,
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
-    }
+    
+    setConfirmConfig({
+      title: '承接任務',
+      message: '是否承接任務？',
+      onConfirm: async () => {
+        try {
+          // Check if user already has an accepted task
+          const activeTasksQuery = query(
+            collection(db, 'tasks'),
+            where('acceptorId', '==', user.uid),
+            where('status', '==', 'accepted')
+          );
+          const activeTasksSnapshot = await getDocs(activeTasksQuery);
+          
+          if (!activeTasksSnapshot.empty) {
+            setConfirmConfig({
+              title: '操作限制',
+              message: '您目前已有正在進行中的任務。請先完成或取消該任務後，再承接新的任務。',
+              onConfirm: () => {},
+              showCancel: false
+            });
+            return;
+          }
+
+          const taskRef = doc(db, 'tasks', task.id);
+          await updateDoc(taskRef, {
+            status: 'accepted',
+            acceptorId: user.uid,
+            updatedAt: serverTimestamp()
+          });
+        } catch (error: any) {
+          try {
+            handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
+          } catch (e) {
+            console.error('Firestore operation failed:', e);
+          }
+          const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+          setConfirmConfig({
+            title: '連線失敗',
+            message: isOffline 
+              ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+              : `操作失敗：${error?.message || '未知錯誤'}`,
+            onConfirm: () => {},
+            showCancel: false
+          });
+        }
+      }
+    });
   };
 
   const handleCancelAccept = async () => {
     if (!user || user.uid !== task.acceptorId) return;
-    try {
-      const taskRef = doc(db, 'tasks', task.id);
-      await updateDoc(taskRef, {
-        status: 'open',
-        acceptorId: deleteField(),
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
-    }
+    
+    setConfirmConfig({
+      title: '取消承接',
+      message: '是否取消承接任務？',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const taskRef = doc(db, 'tasks', task.id);
+          await updateDoc(taskRef, {
+            status: 'open',
+            acceptorId: deleteField(),
+            updatedAt: serverTimestamp()
+          });
+        } catch (error: any) {
+          try {
+            handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
+          } catch (e) {
+            console.error('Firestore operation failed:', e);
+          }
+          const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+          setConfirmConfig({
+            title: '操作失敗',
+            message: isOffline 
+              ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+              : `操作失敗：${error?.message || '未知錯誤'}`,
+            onConfirm: () => {},
+            showCancel: false
+          });
+        }
+      }
+    });
   };
 
   const handleComplete = async () => {
-    if (!user || user.uid !== task.acceptorId) return;
-    try {
-      const taskRef = doc(db, 'tasks', task.id);
-      await updateDoc(taskRef, {
-        status: 'completed',
-        updatedAt: serverTimestamp()
-      });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
-    }
+    if (!user || user.uid !== task.requesterId) return;
+    
+    setConfirmConfig({
+      title: '完成結案',
+      message: '是否確認完成此任務並結案？',
+      onConfirm: async () => {
+        try {
+          const taskRef = doc(db, 'tasks', task.id);
+          await updateDoc(taskRef, {
+            status: 'completed',
+            updatedAt: serverTimestamp()
+          });
+        } catch (error: any) {
+          try {
+            handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
+          } catch (e) {
+            console.error('Firestore operation failed:', e);
+          }
+          const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+          setConfirmConfig({
+            title: '操作失敗',
+            message: isOffline 
+              ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+              : `操作失敗：${error?.message || '未知錯誤'}`,
+            onConfirm: () => {},
+            showCancel: false
+          });
+        }
+      }
+    });
   };
 
   const handleDelete = async () => {
     if (!user || user.uid !== task.requesterId) return;
-    try {
-      const taskRef = doc(db, 'tasks', task.id);
-      await deleteDoc(taskRef);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
-    }
+    
+    setConfirmConfig({
+      title: '刪除委託',
+      message: '是否確認刪除？',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const taskRef = doc(db, 'tasks', task.id);
+          await deleteDoc(taskRef);
+        } catch (error: any) {
+          try {
+            handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
+          } catch (e) {
+            console.error('Firestore operation failed:', e);
+          }
+          const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+          setConfirmConfig({
+            title: '操作失敗',
+            message: isOffline 
+              ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+              : `操作失敗：${error?.message || '未知錯誤'}`,
+            onConfirm: () => {},
+            showCancel: false
+          });
+        }
+      }
+    });
   };
 
   const handleCancelByOwner = async () => {
     if (!user || user.uid !== task.requesterId) return;
-    try {
-      const taskRef = doc(db, 'tasks', task.id);
-      await deleteDoc(taskRef);
-    } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
-    }
+    
+    setConfirmConfig({
+      title: '取消任務',
+      message: '是否取消並刪除？',
+      variant: 'danger',
+      onConfirm: async () => {
+        try {
+          const taskRef = doc(db, 'tasks', task.id);
+          await deleteDoc(taskRef);
+        } catch (error: any) {
+          try {
+            handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
+          } catch (e) {
+            console.error('Firestore operation failed:', e);
+          }
+          const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
+          setConfirmConfig({
+            title: '操作失敗',
+            message: isOffline 
+              ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
+              : `操作失敗：${error?.message || '未知錯誤'}`,
+            onConfirm: () => {},
+            showCancel: false
+          });
+        }
+      }
+    });
   };
 
   const isOwner = user?.uid === task.requesterId;
   const isAcceptor = user?.uid === task.acceptorId;
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = (dateValue: any) => {
     try {
-      return new Date(dateStr).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      if (!dateValue) return '';
+      const date = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
+      return date.toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
     } catch (e) {
-      return dateStr;
+      return String(dateValue);
     }
   };
 
@@ -133,12 +264,22 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             {formatDate(task.deadlineStart)} ~ {formatDate(task.deadlineEnd)}
           </div>
           
-          { (task.status === 'accepted' || task.status === 'completed') && (isOwner || isAcceptor) && (
+          { (task.status === 'accepted' && (isOwner || isAcceptor)) || (task.status === 'open' && isOwner) ? (
             <div className="flex items-center text-[11px] text-indigo-600 font-semibold bg-indigo-50 p-2 rounded-lg break-all">
               <Phone size={12} className="mr-2 flex-shrink-0" />
               聯絡方式：{task.contact}
             </div>
-          )}
+          ) : task.status === 'accepted' && !isOwner && !isAcceptor ? (
+            <div className="flex items-center text-[11px] text-slate-400 font-semibold bg-slate-50 p-2 rounded-lg">
+              <Phone size={12} className="mr-2 flex-shrink-0" />
+              任務進行中，僅相關人員可見
+            </div>
+          ) : task.status === 'open' && !isOwner ? (
+            <div className="flex items-center text-[11px] text-slate-400 font-semibold bg-slate-50 p-2 rounded-lg">
+              <Phone size={12} className="mr-2 flex-shrink-0" />
+              承接任務後即可查看聯絡方式
+            </div>
+          ) : null }
 
           <div className="pt-2 flex flex-col gap-2">
             {/* Accept Action */}
@@ -153,22 +294,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
             {/* Acceptor Actions */}
             {task.status === 'accepted' && isAcceptor && (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={handleComplete}
-                  className="py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1"
-                >
-                  <CheckCircle size={14} />
-                  完成任務
-                </button>
-                <button
-                  onClick={handleCancelAccept}
-                  className="py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1"
-                >
-                  <XCircle size={14} />
-                  取消承接
-                </button>
-              </div>
+              <button
+                onClick={handleCancelAccept}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1"
+              >
+                <XCircle size={14} />
+                取消承接
+              </button>
             )}
 
             {/* Owner Actions */}
@@ -193,13 +325,22 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                   </div>
                 )}
                 {task.status === 'accepted' && (
-                  <button
-                    onClick={handleCancelByOwner}
-                    className="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
-                  >
-                    <XCircle size={14} />
-                    取消該承接者並刪除委託
-                  </button>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={handleComplete}
+                      className="py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1"
+                    >
+                      <CheckCircle size={14} />
+                      完成結案
+                    </button>
+                    <button
+                      onClick={handleCancelByOwner}
+                      className="py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1"
+                    >
+                      <XCircle size={14} />
+                      取消並刪除
+                    </button>
+                  </div>
                 )}
                 {task.status === 'completed' && (
                   <div className="w-full py-2 bg-slate-50 text-slate-400 rounded-xl text-xs font-bold text-center italic">
@@ -226,6 +367,19 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
       {isEditing && (
         <TaskForm taskToEdit={task} onClose={() => setIsEditing(false)} />
+      )}
+
+      {confirmConfig && (
+        <ConfirmDialog
+          isOpen={true}
+          title={confirmConfig.title}
+          message={confirmConfig.message}
+          variant={confirmConfig.variant}
+          onConfirm={confirmConfig.onConfirm}
+          onCancel={() => setConfirmConfig(null)}
+          showCancel={confirmConfig.showCancel}
+          confirmText="確認"
+        />
       )}
     </>
   );

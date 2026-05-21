@@ -8,7 +8,7 @@ import { motion } from 'motion/react';
 import { Loader2, Inbox } from 'lucide-react';
 
 interface TaskListProps {
-  filter: 'all' | 'my-tasks';
+  filter: 'all' | 'open' | 'accepted' | 'my-tasks';
   searchQuery: string;
 }
 
@@ -19,17 +19,31 @@ export function TaskList({ filter, searchQuery }: TaskListProps) {
 
   useEffect(() => {
     let q;
+    const tasksRef = collection(db, 'tasks');
+    
     if (filter === 'all') {
-      q = query(collection(db, 'tasks'), orderBy('createdAt', 'desc'));
-    } else {
+      q = query(
+        tasksRef, 
+        where('status', 'in', ['open', 'accepted']),
+        orderBy('createdAt', 'desc')
+      );
+    } else if (filter === 'my-tasks') {
       if (!user) {
         setLoading(false);
         setTasks([]);
         return;
       }
       q = query(
-        collection(db, 'tasks'), 
+        tasksRef, 
         where('requesterId', '==', user.uid),
+        where('status', 'in', ['open', 'accepted']),
+        orderBy('createdAt', 'desc')
+      );
+    } else {
+      // filter is 'open' or 'accepted'
+      q = query(
+        tasksRef,
+        where('status', '==', filter),
         orderBy('createdAt', 'desc')
       );
     }
@@ -40,6 +54,9 @@ export function TaskList({ filter, searchQuery }: TaskListProps) {
         ...doc.data()
       })) as Task[];
       setTasks(docs);
+      setLoading(false);
+    }, (error) => {
+      console.warn('TaskList onSnapshot subscription error (client may be offline/connecting):', error);
       setLoading(false);
     });
 

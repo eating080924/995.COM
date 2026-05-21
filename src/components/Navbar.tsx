@@ -1,24 +1,29 @@
 import React from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { LogIn, LogOut, User as UserIcon, PlusCircle, Radio } from 'lucide-react';
+import { LoginModal } from './LoginModal';
 
 interface NavbarProps {
   onNewTask: () => void;
   onNewBroadcast: () => void;
-  activeTab: 'all' | 'my-tasks';
-  setActiveTab: (tab: 'all' | 'my-tasks') => void;
+  activeTab: 'all' | 'open' | 'accepted' | 'my-tasks';
+  setActiveTab: (tab: 'all' | 'open' | 'accepted' | 'my-tasks') => void;
 }
 
 export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: NavbarProps) {
-  const { user, signIn, logout } = useAuth();
+  const { user, logout } = useAuth();
+  const [showLoginModal, setShowLoginModal] = React.useState(false);
+
+  const isHomeActive = activeTab !== 'my-tasks';
+  const isMyTasksActive = activeTab === 'my-tasks';
 
   return (
     <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center text-white font-black italic shadow-lg shadow-red-200">995</div>
+        <div className="w-30 h-10 bg-red-500 rounded-xl flex items-center justify-center text-white font-black italic shadow-lg shadow-red-200">995 委託板</div>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-800">
-            出事啦 <span className="text-red-500 underline decoration-2 underline-offset-4">995.COM</span>
+             <span className="text-black-500 decoration-2 underline-offset-4"> — 找到屬於你的超人！</span>
           </h1>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>
         </div>
@@ -28,14 +33,14 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
         <nav className="hidden lg:flex gap-8">
           <button 
             onClick={() => setActiveTab('all')}
-            className={`text-sm font-semibold transition-colors ${activeTab === 'all' ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
+            className={`text-sm font-semibold transition-colors ${isHomeActive ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
           >
             尋找任務
           </button>
           {user && (
             <button 
               onClick={() => setActiveTab('my-tasks')}
-              className={`text-sm font-semibold transition-colors ${activeTab === 'my-tasks' ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
+              className={`text-sm font-semibold transition-colors ${isMyTasksActive ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
             >
               我的任務
             </button>
@@ -49,7 +54,7 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
               className="p-2 text-amber-600 hover:bg-amber-50 rounded-full transition-colors hidden sm:flex items-center gap-1 text-xs font-bold"
             >
               <Radio size={18} />
-              <span>廣播</span>
+              <span>尬廣</span>
             </button>
             <button 
               onClick={onNewTask}
@@ -77,7 +82,7 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
           </div>
         ) : (
           <button
-            onClick={signIn}
+            onClick={() => setShowLoginModal(true)}
             className="px-6 py-2.5 bg-red-500 text-white rounded-full text-sm font-bold shadow-md hover:bg-red-600 transition-all active:scale-95 flex items-center gap-2"
           >
             <LogIn size={18} />
@@ -85,6 +90,8 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
           </button>
         )}
       </div>
+
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
     </header>
   );
 }
