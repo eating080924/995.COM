@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
@@ -8,7 +7,9 @@ async function startServer() {
 
   // In production, serve build artifacts. Otherwise, plug in Vite middleware
   if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
+    // Dynamically import Vite to avoid loading it in production (where it might trigger ERR_REQUIRE_ESM)
+    const viteModule = await (Function('return import("vite")')() as Promise<typeof import("vite")>);
+    const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
