@@ -10,17 +10,21 @@ import { BroadcastMarquee } from './components/BroadcastMarquee';
 import { TaskList } from './components/TaskList';
 import { TaskForm } from './components/TaskForm';
 import { BroadcastForm } from './components/BroadcastForm';
-import { Sparkles, PlusCircle, User as UserIcon, Search } from 'lucide-react';
+import { Sparkles, PlusCircle, User as UserIcon, Search, Loader2 } from 'lucide-react';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { performTaskCleanup } from './lib/taskCleanup';
 import { LoginModal } from './components/LoginModal';
+import { isInAppBrowser } from './lib/detector';
+import { AccountPrivacyPanel } from './components/AccountPrivacyPanel';
+import { CommunityLinks } from './components/CommunityLinks';
 
 function AppContent() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+  const [showInAppBanner, setShowInAppBanner] = useState(true);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBroadcastForm, setShowBroadcastForm] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'open' | 'accepted' | 'my-tasks'>('all');
+  const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'privacy'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
@@ -35,7 +39,7 @@ function AppContent() {
   }, [user]);
 
   React.useEffect(() => {
-    if (!user && activeTab === 'my-tasks') {
+    if (!user && (activeTab === 'my-tasks' || activeTab === 'privacy')) {
       setActiveTab('all');
     }
   }, [user, activeTab]);
@@ -51,12 +55,37 @@ function AppContent() {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
+        <Loader2 className="animate-spin text-red-500 mb-4" size={40} />
+        <p className="text-sm font-bold text-slate-500">委託載入中，尋找您的超人...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans overflow-x-hidden">
+      {showInAppBanner && isInAppBrowser() && !user && (
+        <div className="bg-amber-500 text-white px-4 py-3.5 flex items-center justify-between text-xs gap-3 font-semibold relative z-50 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="text-sm shrink-0">⚠️</span>
+            <span>
+              偵測到您目前使用 LINE/Facebook 內建瀏覽器，App 限制會封鎖社群登入。建議點擊右上角「...」並選擇「用預設瀏覽器開啟」以順利完成登入！
+            </span>
+          </div>
+          <button 
+            onClick={() => setShowInAppBanner(false)} 
+            className="text-white hover:text-amber-100 px-2 py-1 bg-amber-600 rounded transition-colors font-bold text-[10px] shrink-0 active:scale-95"
+          >
+            關閉
+          </button>
+        </div>
+      )}
       <Navbar 
         onNewTask={() => requireLogin(() => setShowTaskForm(true))} 
         onNewBroadcast={() => requireLogin(() => setShowBroadcastForm(true))}
-        activeTab={activeTab === 'my-tasks' ? 'my-tasks' : 'all'}
+        activeTab={(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'my-tasks' : 'all'}
         setActiveTab={(tab) => setActiveTab(tab as any)}
       />
       
@@ -87,12 +116,18 @@ function AppContent() {
                 進行中
               </button>
               {user && (
-                <div className="pt-2 mt-2 border-t border-slate-100">
+                <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
                   <button 
                     onClick={() => setActiveTab('my-tasks')}
                     className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
                   >
                     個人委託
+                  </button>
+                  <button 
+                    onClick={() => setActiveTab('privacy')}
+                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'privacy' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    帳戶與隱私
                   </button>
                 </div>
               )}
@@ -114,9 +149,20 @@ function AppContent() {
               <Sparkles size={120} />
             </div>
           </div>
+
+          <div className="hidden md:block">
+            <CommunityLinks />
+          </div>
           
-          <div className="hidden md:block p-4">
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest text-center">© 2026 995 委託板</p>
+          <div className="hidden md:block p-4 text-center space-y-1.5">
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">© 2026 995 委託板</p>
+            <div className="flex justify-center flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-400 font-medium">
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">隱私權政策</a>
+              <span>·</span>
+              <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">服務條款</a>
+              <span>·</span>
+              <a href="/deletion.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">數據刪除</a>
+            </div>
           </div>
         </aside>
 
@@ -125,7 +171,9 @@ function AppContent() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
             <div className="flex-1">
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">
-                {activeTab === 'all' ? '尋找委託任務' : '追蹤我的需求'}
+                {activeTab === 'privacy' 
+                  ? '個人隱私與帳戶管理' 
+                  : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務')}
               </h2>
               {activeTab === 'all' && (
                 <div className="mt-4 relative max-w-md">
@@ -142,19 +190,51 @@ function AppContent() {
             </div>
           </div>
 
-          <TaskList filter={activeTab} searchQuery={searchQuery} />
+          {(activeTab === 'my-tasks' || activeTab === 'privacy') && (
+            <div className="flex bg-slate-100 p-1 rounded-2xl max-w-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab('my-tasks')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                  activeTab === 'my-tasks' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                我的委託列表
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('privacy')}
+                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                  activeTab === 'privacy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                隱私與帳戶
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'privacy' ? (
+            <AccountPrivacyPanel />
+          ) : (
+            <TaskList filter={activeTab} searchQuery={searchQuery} />
+          )}
+
+          {/* Also show on mobile/tablet screens at the bottom of the tasks list for easy access */}
+          <div className="md:hidden pt-4">
+            <CommunityLinks />
+          </div>
         </section>
       </main>
 
       {/* PWA style Bottom Nav for mobile */}
       <nav className="md:hidden bg-white border-t border-slate-200 flex justify-around items-center h-20 sticky bottom-0 z-40 px-2 pb-safe">
-        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${activeTab !== 'my-tasks' ? 'text-red-500' : 'text-slate-400'}`}>
-          <Sparkles size={22} fill={activeTab !== 'my-tasks' ? 'currentColor' : 'none'} />
+        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-red-500' : 'text-slate-400'}`}>
+          <Sparkles size={22} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} />
           <span className="text-[10px] font-bold">主頁</span>
         </button>
         <div className="flex flex-col items-center gap-1 group relative">
           <button 
-            onClick={() => setShowTaskForm(true)}
+            onClick={() => requireLogin(() => setShowTaskForm(true))}
             className="-mt-12 w-14 h-14 bg-red-500 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white transform active:scale-90 transition-transform"
           >
             <PlusCircle size={28} strokeWidth={3} />
@@ -163,9 +243,9 @@ function AppContent() {
         </div>
         <button 
           onClick={() => requireLogin(() => setActiveTab('my-tasks'))} 
-          className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'my-tasks' ? 'text-red-500' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'text-red-500' : 'text-slate-400'}`}
         >
-          <UserIcon size={22} fill={activeTab === 'my-tasks' ? 'currentColor' : 'none'} />
+          <UserIcon size={22} fill={(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'currentColor' : 'none'} />
           <span className="text-[10px] font-bold">個人</span>
         </button>
       </nav>

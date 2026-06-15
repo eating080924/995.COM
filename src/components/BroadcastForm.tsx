@@ -17,6 +17,14 @@ interface FormData {
 export function BroadcastForm({ onClose }: BroadcastFormProps) {
   const { user } = useAuth();
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+
+  // Close form immediately if user is not logged in (e.g., during sign out or page load delays)
+  React.useEffect(() => {
+    if (!user) {
+      onClose();
+    }
+  }, [user, onClose]);
+
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>();
 
   const onSubmit = async (data: FormData) => {

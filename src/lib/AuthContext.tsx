@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   GoogleAuthProvider, 
   FacebookAuthProvider,
   signOut, 
@@ -9,6 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { isInAppBrowser } from './detector';
 
 interface AuthContextType {
   user: User | null;
@@ -24,6 +27,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check for redirect result when the page loads (handles redirect sign-in login on mobile)
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          console.log('Successfully signed in via redirect:', result.user);
+        }
+      })
+      .catch((error) => {
+        console.error('Redirect sign-in error:', error);
+      });
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
@@ -55,10 +69,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const provider = providerType === 'facebook' 
       ? new FacebookAuthProvider() 
       : new GoogleAuthProvider();
+    
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
+                  (navigator.userAgent.includes("Mac") && "ontouchend" in document);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isiOSOrSafari = isIOS || isSafari;
+    const isWebview = isInAppBrowser();
+
+    // 1. If inside an App's In-App Browser (LINE, Webview, Facebook App, WeChat, etc.)
+    // signInWithPopup is guaranteed to hang, freeze, or fail because popups are blocked/unsupported.
+    // Also, redirects inside Webviews will lose state on redirect due to third-party cookie/storage blocking.
+    if (isWebview) {
+      console.warn('Detect In-App Browser (FB/LINE/IG etc.). Disallowing popup, alerting user for best practices.');
+      alert(
+        '【重要登入提示】\n' +
+        '您目前正在使用 LINE、Facebook 或 Instagram 等 App 內建瀏覽器。\n\n' +
+        '因 App 安全限制與 Cookie 限制，社群登入（Google / FB）會被機制阻擋而無法正常完成（導致網頁重置或卡死）。\n\n' +
+        '【解決方法】\n' +
+        '請點擊畫面右上方（iOS 點右上角「...」、Android 點右上角「...」或外部瀏覽器圖示）的選單，選擇「用預設瀏覽器開啟」或「在 Safari / Chrome 中開啟」，開啟後即可順利登入且不遺失狀態！'
+      );
+      
+      // Still trigger redirect in background just in case, but warn them
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError) {
+        console.error('In-App Redirect error:', redirectError);
+      }
+      return;
+    }
+
     try {
+      // Try popup sign-in first on normal mobile/desktop browsers (Safari, Chrome, etc.).
+      // On modern mobile devices (Safari & Chrome), when triggered directly by user click,
+      // signInWithPopup works reliably and safely circumvents the third-party cookie restrictions.
       await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error(`${providerType} Sign in error:`, error);
+    } catch (error: any) {
+      console.warn(`${providerType} popup sign-in error:`, error);
+      
+      const errorCode = error?.code;
+      // If the user closed the popup, cancelled, or it's a cancellation error, DO NOT redirect.
+      if (
+        errorCode === 'auth/popup-closed-by-user' || 
+        errorCode === 'auth/cancelled-popup-request' ||
+        errorCode === 'auth/user-cancelled'
+      ) {
+        console.log('Sign-in cancelled by user. Skipping redirect.');
+        return;
+      }
+
+      // If we are on iOS or Safari, we MUST NOT use signInWithRedirect as Safari's Intelligent Tracking
+      // Prevention (ITP) blocks third-party storage/cookie access from cross-site domains (e.g. firebaseapp.com vs run.app),
+      // which guarantees that any redirect authentication state will be lost upon returning, leaving the user signed out.
+      if (isiOSOrSafari) {
+        if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/web-storage-unsupported') {
+          alert(
+            providerType === 'facebook'
+              ? '由於您使用的瀏覽器限制（例如：Safari 或 iOS 的彈出視窗與第三方 Cookie 阻擋），Facebook 登入功能被攔截了。請嘗試「允許此來源的彈出視窗」，或使用 Google 登入。'
+              : '由於瀏覽器限制，登入彈出視窗被攔截了。請嘗試「允許此來源的彈出視窗」以完成登入。'
+          );
+        } else {
+          alert('登入失敗，請確認是否允許彈出視窗後重試，或嘗試使用其他瀏覽器。');
+        }
+        return;
+      }
+
+      // For non-iOS/non-Safari environments (like Android Chrome / FireFox / Desktop), we can safely fall back to redirect.
+      console.log('Non-iOS/Safari browser. Falling back to signInWithRedirect...');
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError) {
+        console.error(`${providerType} Redirect Sign-in error:`, redirectError);
+      }
     }
   };
 

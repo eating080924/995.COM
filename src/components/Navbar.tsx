@@ -20,10 +20,10 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
   return (
     <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="flex items-center gap-3">
-        <div className="w-30 h-10 bg-red-500 rounded-xl flex items-center justify-center text-white font-black italic shadow-lg shadow-red-200">995 委託板</div>
+        <div className="w-30 h-10 bg-white border-2 border-blue-500 rounded-xl flex items-center justify-center text-blue-500 font-black italic shadow-lg shadow-blue-100 drop-shadow-[1px_1px_0_rgba(0,0,0,1)]"> 995 委託板 </div>
         <div>
           <h1 className="text-xl font-bold tracking-tight text-slate-800">
-             <span className="text-black-500 decoration-2 underline-offset-4"> — 找到屬於你的超人！</span>
+             <span className="text-black-500 decoration-2 underline-offset-4"> 《找到屬於你的超人》</span>
           </h1>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>
         </div>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>用戶數據刪除指引 (Data Deletion Instructions) - 995 委託板</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans leading-relaxed">
+  <div class="max-w-4xl mx-auto px-4 py-12">
+    <!-- Header -->
+    <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-8 mb-8">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-12 h-12 bg-red-500 rounded-2xl flex items-center justify-center text-white font-black italic shadow-md shadow-red-200 text-lg">995</div>
+        <div>
+          <h1 class="text-2xl font-black text-slate-800">用戶資料與數據刪除指引</h1>
+          <p class="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">Data Deletion Instructions (Meta Compliant)</p>
+        </div>
+      </div>
+      <p class="text-sm text-slate-500">最近更新日期：2026年5月22日</p>
+    </div>
+
+    <!-- Main Content -->
+    <div class="bg-white rounded-3xl border border-slate-200 shadow-sm p-6 md:p-10 space-y-8">
+      
+      <!-- Section 1 (Traditional Chinese) -->
+      <section class="space-y-4">
+        <h2 class="text-xl font-bold text-slate-900 border-l-4 border-red-500 pl-3">如何徹底刪除您在 995 委託板 的帳號與數據</h2>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          「995 委託板」高度重視您的數據所有自主權。依據 GDPR 與 Meta 應用程式政策，不論您是透過 <b>Facebook</b> 或 <b>Google</b> 登入，我們均提供<b>「即時一鍵刪除」</b>及<b>「書面申請刪除」</b>兩種資料清除管道：
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">管道一：應用程式內一鍵自主刪除 (推薦，即時生效)</h3>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          您可以直接在我們的網頁上清空所有個人資料，步驟如下：
+        </p>
+        <ol class="list-decimal pl-5 text-sm text-slate-600 space-y-2">
+          <li>使用您原本的社群方式登入<b>「995 委託板」</b>。</li>
+          <li>在首頁側邊欄點選<b>「個人委託」</b>（或在手機版下方導航列點選<b>「個人」</b>分頁）。</li>
+          <li>在網頁中間看見<b>「個人隱私與帳戶管理」</b>控制面板。</li>
+          <li>點選紅色按鈕：<b>「永久刪除帳號與所有委託資料」</b>。</li>
+          <li>依照系統提示，在確認對話框內輸入 <b>確認刪除</b> 四個字，並點選確認。</li>
+          <li>資料庫將隨即完成以下不可逆的操作：
+            <ul class="list-disc pl-5 mt-1 space-y-1 text-xs text-slate-500">
+              <li>徹底刪除您在 `/users` 集合中的個人檔案記錄（包含稱呼、頭像、連結電子郵件）。</li>
+              <li>自動尋找並永久清空您在平台曾發佈過的所有委託任務與廣播記錄（無人能再次看見或恢復）。</li>
+              <li>自動中斷該裝制上的所有 Firebase 登入快取與 Token 狀態。</li>
+            </ul>
+          </li>
+        </ol>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">管道二：書面電子郵件申請 (由管理員人工清除)</h3>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          若您因為任何原因（如：登入帳號遺失或連線異常）無法登入系統點選 self-deletion 按鈕，請直接寄信向管理組小組提報。
+        </p>
+        <div class="bg-slate-50 p-5 rounded-2xl border border-slate-150 max-w-xl mx-auto space-y-2">
+          <p class="text-sm font-bold text-slate-700">📧 申請信範本：</p>
+          <div class="bg-white p-3.5 rounded-xl border text-xs text-slate-500 font-mono space-y-1 select-all leading-normal">
+            <div>收件人：eating080924@gmail.com</div>
+            <div>主旨：申請 995委託板 用戶個資刪除 - [您的公開稱呼/Email]</div>
+            <div>內文：您好，我是 995委託板 的社群註冊用戶。我想發起對本人的所有個人資料抹除。我的註冊 Email 為：______，社群名稱為：______。請協助徹底清空我的所有委託歷史檔案與個資。謝謝！</div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 text-center">
+          * 管理組在收到信件並核實身分無誤後，會在 3 個工作天內，至後台主機為您徹底淨空所有 Firestore 及 Auth 記錄。
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">如何解除 Facebook 上的 995 應用程式授權</h3>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          若要完全撤銷您先前對本平台授權存取的 FB 基本權力，可直接在 Facebook 平台進行廢止：
+        </p>
+        <ol class="list-decimal pl-5 text-sm text-slate-600 space-y-1.5">
+          <li>登入您的 Facebook 帳密。</li>
+          <li>前往您個人設定、隱私中的<b>「設定與隱私」</b> > <b>「設定」</b>。</li>
+          <li>在左側選單中，點選<b>「應用程式和網站」</b> (Apps and Websites)。</li>
+          <li>搜尋名為並點選<b>「995 委託板」</b> (或您當初授權之應用名稱)。</li>
+          <li>點選 <b>「移除」</b> 即可中斷後續的連結。</li>
+        </ol>
+      </section>
+
+      <hr class="border-slate-100 my-8">
+
+      <!-- English Version -->
+      <div class="pt-4 border-t border-slate-100">
+        <h2 class="text-lg font-black text-slate-400 uppercase tracking-widest mb-6">Translation - English Version</h2>
+      </div>
+
+      <section class="space-y-4">
+        <h2 class="text-xl font-bold text-slate-900 border-l-4 border-slate-400 pl-3">Data Deletion Instructions (GDPR & Meta Compliance)</h2>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          At "995 Marketplace", we deeply value your control over your personal footprint. In compliance with GDPR and Meta Platform Policies, we offer two secure data deletion solutions for accounts created via <b>Facebook</b> or <b>Google Login</b>:
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">Option 1. Instant Self-Service Deletion inside the Application (Recommended)</h3>
+        <ol class="list-decimal pl-5 text-sm text-slate-600 space-y-1.5">
+          <li>Log in to your <b>995 Marketplace</b> account.</li>
+          <li>Click <b>"My Tasks"</b> (個人委託) in the sidebar (or tap the <b>"Profile"</b> icon in the bottom navbar on mobile layout).</li>
+          <li>Locate the panel labeled <b>"Personal Data & Account Privacy"</b>.</li>
+          <li>Click the red button: <b>"Delete App Account and Task Data"</b>.</li>
+          <li>Enter the verification confirmation signature <b>確認刪除</b> inside the prompt text field, then click confirm.</li>
+          <li>Our cloud Firestore systems will immediately run an irreversible purging query: Users profile document, task sheets, & active broadcasts linked to your `uid` are instantly destroyed.</li>
+        </ol>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">Option 2. Email-Based Written Support Request</h3>
+        <p class="text-sm text-slate-600">
+          If you are unable to access your portal, you may file a deletion request via our support inbox. Our representative will cross-verify ownership and clear your data files manually.
+        </p>
+        <p class="font-bold text-sm text-center py-2 bg-slate-50 border rounded-xl max-w-sm mx-auto">
+          Contact Email Address: <a href="mailto:eating080924@gmail.com" class="text-red-500 hover:underline">eating080924@gmail.com</a>
+        </p>
+        <p class="text-xs text-slate-400 text-center leading-normal">
+          Wipe requests will be concluded within 3 business days of verification.
+        </p>
+      </section>
+
+      <section class="space-y-4">
+        <h3 class="text-lg font-bold text-slate-900">How to Revoke "995" App Permissions inside Facebook Settings</h3>
+        <p class="text-sm text-slate-600 leading-relaxed">
+          If you wish to terminate authorization for this app, you can do so directly within Facebook:
+        </p>
+        <ol class="list-decimal pl-5 text-sm text-slate-600 space-y-1.5">
+          <li>Log in to your Facebook profile.</li>
+          <li>Go to <b>Settings & Privacy</b> > <b>Settings</b>.</li>
+          <li>Select <b>Apps and Websites</b> in the left navigation sidebar.</li>
+          <li>Locate <b>"995 委託板"</b>.</li>
+          <li>Click <b>Remove</b> to revoke developer token access permanently.</li>
+        </ol>
+      </section>
+
+    </div>
+
+    <!-- Footer -->
+    <div class="text-center mt-8 text-xs text-slate-400">
+      <p>© 2026 995 委託板. All Rights Reserved. </p>
+    </div>
+  </div>
+</body>
+</html>

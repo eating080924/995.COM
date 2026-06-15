@@ -55,9 +55,11 @@ export function BroadcastMarquee() {
   const currentItem = activeBroadcast;
 
   return (
-    <div className="bg-red-600 text-white py-3 shadow-lg relative overflow-hidden transition-colors">
+    <div className="bg-slate-900 text-slate-100 py-3 shadow-lg relative overflow-hidden transition-colors border-b border-blue-900/50">
       <div className="max-w-7xl mx-auto px-4 flex items-center gap-4">
-        <div className="flex items-center gap-2 bg-red-700 px-3 py-1 rounded-full text-xs font-black uppercase tracking-tighter shrink-0">
+        
+        {/* 廣播標籤：保持超吸睛黃黑配 */}
+        <div className="flex items-center gap-2 bg-yellow-400 border border-black px-3 py-1 rounded-full text-xs font-black uppercase tracking-tighter shrink-0 text-black drop-shadow-[1px_1px_0_rgba(0,0,0,1)]">
           <Megaphone size={14} className="fill-current animate-bounce" />
           <span>廣播</span>
         </div>

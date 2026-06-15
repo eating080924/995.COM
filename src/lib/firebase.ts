@@ -16,15 +16,28 @@ const databaseId = isDefaultDb ? undefined : firebaseConfig.firestoreDatabaseId;
 
 let firestoreInstance;
 
+// Detect if we are running in an iframe (e.g., AI Studio preview iframe, embedded widgets).
+// In sandboxed/restricted iframe environments, third-party IndexedDB reads/writes are blocked or broken,
+// which causes Firebase Firestore's internal target caching to crash asynchronously in the background.
+// Defaulting to memoryCache in these contexts avoids the uncatchable "Cannot read properties of null (reading 'Te')" crash.
+const isIframe = typeof window !== 'undefined' && window.self !== window.top;
+
 try {
-  // Try to initialize Firestore with persistent local cache (IndexedDB)
-  firestoreInstance = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager()
-    })
-  }, databaseId);
+  if (isIframe) {
+    console.log('Running in iframe sandbox. Initializing Firestore with memoryLocalCache for stability.');
+    firestoreInstance = initializeFirestore(app, {
+      localCache: memoryLocalCache()
+    }, databaseId);
+  } else {
+    // Try to initialize Firestore with persistent local cache (IndexedDB)
+    firestoreInstance = initializeFirestore(app, {
+      localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+      })
+    }, databaseId);
+  }
 } catch (error) {
-  console.warn('Failed to initialize Firestore with persistent local cache (usually due to iframe sandbox or restricted storage access):', error);
+  console.warn('Failed to initialize Firestore with persistent local cache (usually due to restricted storage access):', error);
   try {
     // Fallback to memory-only cache if persistent cache setup throws an error
     firestoreInstance = initializeFirestore(app, {

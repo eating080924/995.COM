@@ -1,10 +1,10 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
-import { X } from 'lucide-react';
+import { X, Loader2, AlertTriangle } from 'lucide-react';
 import { Task } from '../types';
 
 interface TaskFormProps {
@@ -24,6 +24,37 @@ interface FormData {
 export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   const { user } = useAuth();
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [checkingActiveTask, setCheckingActiveTask] = React.useState(false);
+  const [hasActiveTask, setHasActiveTask] = React.useState<boolean | null>(null);
+
+  // Close form immediately if user is not logged in (e.g., during sign out or page load delays)
+  React.useEffect(() => {
+    if (!user) {
+      onClose();
+    }
+  }, [user, onClose]);
+
+  // Check if user already has an active task (status in ['open', 'accepted'])
+  React.useEffect(() => {
+    if (!taskToEdit && user) {
+      setCheckingActiveTask(true);
+      const q = query(
+        collection(db, 'tasks'),
+        where('requesterId', '==', user.uid),
+        where('status', 'in', ['open', 'accepted'])
+      );
+      getDocs(q)
+        .then((snapshot) => {
+          setHasActiveTask(!snapshot.empty);
+          setCheckingActiveTask(false);
+        })
+        .catch((error) => {
+          console.error('Error checking active tasks:', error);
+          setCheckingActiveTask(false);
+        });
+    }
+  }, [user, taskToEdit]);
+
   const formatForInput = (dateValue: any) => {
     if (!dateValue) return '';
     const date = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
@@ -75,6 +106,19 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           updatedAt: serverTimestamp()
         });
       } else {
+        // Enforce active task limit on submission
+        const q = query(
+          collection(db, 'tasks'),
+          where('requesterId', '==', user.uid),
+          where('status', 'in', ['open', 'accepted'])
+        );
+        const activeTasksSnapshot = await getDocs(q);
+        if (!activeTasksSnapshot.empty) {
+          setSubmitError('您目前已有進行中或開放中的委託任務，無法發布新任務。');
+          setHasActiveTask(true);
+          return;
+        }
+
         await addDoc(collection(db, 'tasks'), {
           ...data,
           deadlineStart: Timestamp.fromDate(new Date(data.deadlineStart)),
@@ -101,6 +145,51 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       );
     }
   };
+
+  if (checkingActiveTask) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md p-8 flex flex-col items-center justify-center space-y-4 shadow-2xl">
+          <Loader2 className="animate-spin text-red-500" size={36} />
+          <p className="text-sm font-bold text-slate-500">正在檢查您的發布狀態...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!taskToEdit && hasActiveTask) {
+    return (
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100">
+          <div className="p-6 border-b flex justify-between items-center bg-red-50 text-red-650">
+            <h2 className="text-lg font-black flex items-center gap-2">
+              <AlertTriangle size={20} className="text-red-500 shrink-0" />
+              <span>發布數量限制</span>
+            </h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+              <X size={20} />
+            </button>
+          </div>
+          <div className="p-6 text-center space-y-4">
+            <p className="text-sm text-slate-600 leading-relaxed">
+              為了維護任務市集品質，每個帳號每次<b>限發布一筆委託任務</b>。
+            </p>
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-left text-xs text-amber-800 space-y-1.5 font-medium leading-relaxed">
+              <p className="font-bold text-amber-900 block">💡 提示與說明：</p>
+              <p>您目前已有正在進行（進行中）或等待承接（開放中）的委託任務。</p>
+              <p className="font-bold text-slate-800 pt-1 border-t border-amber-100/50">請先前往「個人委託」專區，將現有委託進行「完成結案」或「取消任務」後，才能建立新委託。</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="w-full bg-slate-900 text-white py-3 rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg active:scale-95 text-sm"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
