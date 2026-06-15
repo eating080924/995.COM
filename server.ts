@@ -9,7 +9,7 @@ const __dirname = path.dirname(__filename);
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // In production, serve build artifacts. Otherwise, plug in Vite middleware
   if (process.env.NODE_ENV !== "production") {

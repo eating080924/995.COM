@@ -1,0 +1,23 @@
+# .gcloudignore
+# This file instructs gcloud which files to ignore when uploading sources for deployment
+
+.gcloudignore
+.git
+.gitignore
+
+# Folders to exclude
+node_modules/
+dist/
+.next/
+.cache/
+
+# Local env files
+.env
+.env.local
+.env.*.local
+
+# Build output and log files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
