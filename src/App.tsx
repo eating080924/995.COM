@@ -157,11 +157,11 @@ function AppContent() {
           <div className="hidden md:block p-4 text-center space-y-1.5">
             <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">© 2026 995 委託板</p>
             <div className="flex justify-center flex-wrap gap-x-2 gap-y-1 text-[10px] text-slate-400 font-medium">
-              <a href="/privacy.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">隱私權政策</a>
+              <a href="./privacy.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">隱私權政策</a>
               <span>·</span>
-              <a href="/terms.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">服務條款</a>
+              <a href="./terms.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">服務條款</a>
               <span>·</span>
-              <a href="/deletion.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">數據刪除</a>
+              <a href="./deletion.html" target="_blank" rel="noopener noreferrer" className="hover:text-red-500 underline transition-colors">數據刪除</a>
             </div>
           </div>
         </aside>
