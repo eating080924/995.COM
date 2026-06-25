@@ -1,0 +1,13 @@
+{
+  "name": "stop-billing-function",
+  "version": "1.0.0",
+  "description": "Cloud Function to disable GCP Billing when budget limit is reached",
+  "main": "index.js",
+  "scripts": {
+    "start": "npx @google-cloud/functions-framework --target=stopBilling"
+  },
+  "dependencies": {
+    "@google-cloud/billing": "^5.0.0",
+    "@google-cloud/functions-framework": "^3.0.0"
+  }
+}
