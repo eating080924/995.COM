@@ -21,9 +21,85 @@ const GoogleIcon = () => (
 export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const { signIn } = useAuth();
   const [loading, setLoading] = React.useState<'google' | 'facebook' | null>(null);
-  const [errMsg, setErrMsg] = React.useState<string | null>(null);
+  const [errMsg, setErrMsg] = React.useState<React.ReactNode | null>(null);
 
   if (!isOpen) return null;
+
+  const getFirebaseErrorMessage = (error: any, provider: 'google' | 'facebook'): React.ReactNode => {
+    const code = error?.code || '';
+    const message = error?.message || '';
+    
+    if (code === 'auth/unauthorized-domain') {
+      return (
+        <div className="space-y-1.5 text-left">
+          <p className="font-bold text-red-600 text-[11px]">⚠️ 網域未授權 (Unauthorized Domain)</p>
+          <p className="text-slate-600 text-[10px]">您的部署網域尚未在 Firebase Console 加入「授權網域」中！</p>
+          <p className="font-bold text-slate-800 pt-1 text-[10px]">【修復步驟】</p>
+          <ol className="list-decimal pl-4 space-y-1 text-slate-600 text-[10px]">
+            <li>前往 <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-bold">Firebase 控制台</a></li>
+            <li>進入您的專案：<code className="bg-slate-100 px-1 rounded text-red-500 font-mono">com-515d4</code></li>
+            <li>點擊左側選單的 <span className="font-bold">Authentication</span></li>
+            <li>切換至右側上方分頁中的 <span className="font-bold">設定 (Settings)</span></li>
+            <li>點擊左方選單的 <span className="font-bold">授權網域 (Authorized domains)</span></li>
+            <li>點擊 <span className="font-bold text-blue-600">新增網域</span>，將以下網域貼上並新增：
+              <ul className="list-disc pl-4 mt-1 font-mono text-[9px] bg-slate-100 p-1.5 rounded select-all text-slate-800 space-y-0.5">
+                <li>eating080924.github.io</li>
+                <li>{window.location.hostname}</li>
+              </ul>
+            </li>
+          </ol>
+        </div>
+      );
+    }
+
+    if (code === 'auth/operation-not-allowed') {
+      return (
+        <div className="space-y-1.5 text-left">
+          <p className="font-bold text-red-600 text-[11px]">⚠️ 登入方法未啟用 (Operation Not Allowed)</p>
+          <p className="text-slate-600 text-[10px]">Google 登入通道尚未在 Firebase Console 啟用！</p>
+          <p className="font-bold text-slate-800 pt-1 text-[10px]">【修復步驟】</p>
+          <ol className="list-decimal pl-4 space-y-1 text-slate-600 text-[10px]">
+            <li>前往 <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-bold">Firebase 控制台</a></li>
+            <li>進入您的專案</li>
+            <li>點擊左側選單的 <span className="font-bold">Authentication</span></li>
+            <li>切換至 <span className="font-bold">登入方法 (Sign-in method)</span> 分頁</li>
+            <li>點擊 <span className="font-bold text-blue-600">新增提供業者 (Add new provider)</span>，點選 <span className="font-bold">Google</span></li>
+            <li>點選右上角的「啟用 (Enable)」，填入您的專案支援電子郵件，然後點擊「儲存 (Save)」即可！</li>
+          </ol>
+        </div>
+      );
+    }
+
+    if (code === 'auth/popup-blocked') {
+      return (
+        <div className="space-y-1 text-left text-[10px]">
+          <p className="font-bold text-red-600 text-[11px]">⚠️ 彈出視窗被封鎖 (Popup Blocked)</p>
+          <p className="text-slate-600">瀏覽器阻擋了 Google 登入的彈出視窗。</p>
+          <p className="font-bold text-slate-800 pt-1">【解決方法】</p>
+          <p className="text-slate-600">請允許此網站開啟「彈出視窗與重新導向」，然後再次點擊登入！</p>
+        </div>
+      );
+    }
+
+    if (code === 'auth/network-request-failed') {
+      return (
+        <div className="space-y-1 text-left text-[10px]">
+          <p className="font-bold text-red-600 text-[11px]">⚠️ 網路請求失敗 (Network Error)</p>
+          <p className="text-slate-600">無法正常與 Firebase 伺服器建立連線。</p>
+          <p className="font-bold text-slate-800 pt-1">【解決方法】</p>
+          <p className="text-slate-600">請確認您的網路狀況，或檢查是否安裝了 AdBlock 廣告阻擋套件，請暫時對本站關閉或停用後重試。</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-1 text-left text-[10px]">
+        <p className="font-bold text-red-600 text-[11px]">⚠️ 登入失敗 (代碼: {code || '未知'})</p>
+        <p className="text-slate-600">訊息: {message || '發生未知錯誤，請檢查瀏覽器主控台 (Console) 記錄。'}</p>
+        <p className="text-[9px] text-slate-400 font-mono mt-1 select-all bg-slate-100 p-1 rounded break-all">{String(error)}</p>
+      </div>
+    );
+  };
 
   const handleSignIn = (provider: 'google' | 'facebook') => {
     setErrMsg(null);
@@ -39,7 +115,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       })
       .catch((error) => {
         console.error('Sign-in failed:', error);
-        setErrMsg('社群登入失敗，請確認是否正常開放彈出視窗並重試。');
+        setErrMsg(getFirebaseErrorMessage(error, provider));
       })
       .finally(() => {
         setLoading(null);
@@ -126,8 +202,8 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
             {/* Error messages */}
             {errMsg && (
-              <div className="p-3 bg-red-50 text-red-700 rounded-xl border border-red-100 text-[10px] font-bold leading-relaxed">
-                ⚠️ {errMsg}
+              <div className="p-4 bg-red-50/70 text-red-800 rounded-2xl border border-red-100 leading-relaxed shadow-sm">
+                {errMsg}
               </div>
             )}
 
