@@ -1,0 +1,65 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  PROJECT_ID: 'YOUR_GCP_PROJECT_ID'      # 您的 Google Cloud 專案 ID (例如: my-project-12345)
+  REGION: 'asia-east1'                   # 部署的區域 (例如: asia-east1 代表台灣地區)
+  SERVICE_NAME: 'taskboard-995'          # 您在 Cloud Run 中的服務名稱
+  IMAGE_NAME: 'taskboard-995'            # 容器映像檔名稱
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # --- 步驟 1: 登入 Google Cloud ---
+      # 建議使用金鑰認證 (Service Account Key) 或 Workload Identity Federation (WIF)
+      # 為了最直覺的設定，這裡展示使用 Service Account 金鑰的方式：
+      # 您需要在 GitHub 專案的 Settings -> Secrets and variables -> Actions 中新增一個名為 GCP_SA_KEY 的 Secret
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      # --- 步驟 2: 設定 Google Cloud SDK ---
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # --- 步驟 3: 設定 Docker 登入 GCP Artifact Registry 或 GCR ---
+      # 這裡我們使用舊版的 Google Container Registry (gcr.io)，設定極為簡單快速
+      - name: Authorize Docker
+        run: |
+          gcloud auth configure-docker gcr.io --quiet
+
+      # --- 步驟 4: 建置 Docker 映像檔並上傳至 Container Registry ---
+      - name: Build and Push Container
+        run: |
+          docker build -t gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      # --- 步驟 5: 部署至 Google Cloud Run ---
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: '--allow-unauthenticated' # 允許未驗證造訪 (公開網址)
+
+      # --- 步驟 6: 顯示部署成功的網址 ---
+      - name: Show Output URL
+        run: |
+          echo "您的服務已成功部署至 Cloud Run，網址為: ${{ steps.deploy.outputs.url }}"
