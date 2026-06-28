@@ -7,7 +7,7 @@ on:
       - master
 
 env:
-  PROJECT_ID: 'YOUR_GCP_PROJECT_ID'      # 您的 Google Cloud 專案 ID (例如: my-project-12345)
+  PROJECT_ID: 'com-515d4'      # 您的 Google Cloud 專案 ID (例如: my-project-12345)
   REGION: 'asia-east1'                   # 部署的區域 (例如: asia-east1 代表台灣地區)
   SERVICE_NAME: 'taskboard-995'          # 您在 Cloud Run 中的服務名稱
   IMAGE_NAME: 'taskboard-995'            # 容器映像檔名稱
@@ -24,9 +24,11 @@ jobs:
         uses: actions/checkout@v4
 
       # --- 步驟 1: 登入 Google Cloud ---
-      # 建議使用金鑰認證 (Service Account Key) 或 Workload Identity Federation (WIF)
-      # 為了最直覺的設定，這裡展示使用 Service Account 金鑰的方式：
-      # 您需要在 GitHub 專案的 Settings -> Secrets and variables -> Actions 中新增一個名為 GCP_SA_KEY 的 Secret
+      # 🚨 錯誤排除：如果您遇到 "must specify exactly one of workload_identity_provider or credentials_json" 錯誤：
+      # 代表 GitHub 讀不到 ${{ secrets.GCP_SA_KEY }}，請務必確認：
+      # 1. 您已在 GitHub 專案的 Settings -> Secrets and variables -> Actions -> Repository Secrets 中新增一個名為 GCP_SA_KEY 的密鑰
+      # 2. 密鑰內容為完整的 Google Cloud Service Account JSON 金鑰內容（包含花括號 {} 的整段 JSON）
+      # 3. 確保拼字完全一致，沒有多餘的空格
       - name: Google Auth
         id: auth
         uses: google-github-actions/auth@v2
