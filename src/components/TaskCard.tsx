@@ -4,7 +4,7 @@ import { cn, formatTimeAgo } from '../lib/utils';
 import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
-import { doc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { TaskForm } from './TaskForm';
@@ -25,11 +25,54 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     if (!user) return;
     
     setConfirmConfig({
-      title: '承接任務',
-      message: '是否承接任務？',
+      title: '是否承接任務？',
+      message: '⚠️ 提醒：若在承接 10 分鐘內「立刻取消」，將會觸發安全機制並限制 10 分鐘內無法承接任何新任務。',
       onConfirm: async () => {
         try {
-          // Check if user already has an accepted task
+          // 1. Check local storage first (instant client-side check)
+          const localLastCancel = localStorage.getItem(`lastCancelledAt_${user.uid}`);
+          if (localLastCancel) {
+            const localElapsed = Date.now() - parseInt(localLastCancel, 10);
+            if (localElapsed < 10 * 60 * 1000) { // 10 minutes
+              const remainingMinutes = Math.ceil((10 * 60 * 1000 - localElapsed) / 60000);
+              setConfirmConfig({
+                title: '安全冷卻中 🔒',
+                message: `為維護平台秩序並防止聯絡資訊被惡意收集，取消承接後有 10 分鐘安全冷卻期。您目前尚在冷卻時間內，請稍候 ${remainingMinutes} 分鐘後再試。`,
+                onConfirm: () => {},
+                showCancel: false
+              });
+              return;
+            }
+          }
+
+          // 2. Fetch remote user profile from Firestore to ensure synchronization across devices
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const lastCancelledAt = userData.lastCancelledAt?.toDate 
+              ? userData.lastCancelledAt.toDate() 
+              : (userData.lastCancelledAt ? new Date(userData.lastCancelledAt) : null);
+            
+            if (lastCancelledAt) {
+              const remoteElapsed = Date.now() - lastCancelledAt.getTime();
+              if (remoteElapsed < 10 * 60 * 1000) { // 10 minutes
+                const remainingMinutes = Math.ceil((10 * 60 * 1000 - remoteElapsed) / 60000);
+                // Synchronize to localStorage
+                localStorage.setItem(`lastCancelledAt_${user.uid}`, lastCancelledAt.getTime().toString());
+                
+                setConfirmConfig({
+                  title: '安全冷卻中 🔒',
+                  message: `為維護平台秩序並防止聯絡資訊被惡意收集，取消承接後有 10 分鐘安全冷卻期。您目前尚在冷卻時間內，請稍候 ${remainingMinutes} 分鐘後再試。`,
+                  onConfirm: () => {},
+                  showCancel: false
+                });
+                return;
+              }
+            }
+          }
+
+          // 3. Check if user already has an active accepted task
           const activeTasksQuery = query(
             collection(db, 'tasks'),
             where('acceptorId', '==', user.uid),
@@ -77,17 +120,36 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     if (!user || user.uid !== task.acceptorId) return;
     
     setConfirmConfig({
-      title: '取消承接',
-      message: '是否取消承接任務？',
+      title: '是否確認取消承接此任務？',
+      message: '⚠️ 提醒：若是在承接 10 分鐘內「立刻取消」，將會觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
       variant: 'danger',
       onConfirm: async () => {
         try {
+          // Calculate hold duration
+          const acceptedAt = task.updatedAt?.toDate 
+            ? task.updatedAt.toDate() 
+            : (task.updatedAt ? new Date(task.updatedAt) : null);
+          const elapsedMs = acceptedAt ? (Date.now() - acceptedAt.getTime()) : 0;
+          const isQuickCancel = elapsedMs < 10 * 60 * 1000; // 10 minutes
+
+          // 1. Reset task status
           const taskRef = doc(db, 'tasks', task.id);
           await updateDoc(taskRef, {
             status: 'open',
             acceptorId: deleteField(),
             updatedAt: serverTimestamp()
           });
+
+          // 2. Apply security cooling down if it's a quick cancel (prevent contact collection spam)
+          if (isQuickCancel) {
+            const userRef = doc(db, 'users', user.uid);
+            await updateDoc(userRef, {
+              lastCancelledAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+            // Update local storage
+            localStorage.setItem(`lastCancelledAt_${user.uid}`, Date.now().toString());
+          }
         } catch (error: any) {
           try {
             handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
