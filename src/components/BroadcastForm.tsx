@@ -6,6 +6,13 @@ import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { X, CreditCard, ShieldAlert, Timer, CheckCircle } from 'lucide-react';
 
+class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
 interface BroadcastFormProps {
   onClose: () => void;
 }
@@ -120,11 +127,11 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         const rem = Math.ceil((COOLDOWN_MS - (now - latestTime)) / 1000);
         const remMin = Math.floor(rem / 60);
         const remSec = rem % 60;
-        throw new Error(`請勿頻繁發送廣播！冷卻中，請等待 ${remMin} 分 ${remSec} 秒後重試。`);
+        throw new ValidationError(`請勿頻繁發送廣播！冷卻中，請等待 ${remMin} 分 ${remSec} 秒後重試。`);
       }
 
       if (dayCount >= 10) {
-        throw new Error('您已達到每日發布上限 (24 小時內最多 10 則)。');
+        throw new ValidationError('您已達到每日發布上限 (24 小時內最多 10 則)。');
       }
 
       // Set active until 30 minutes from now for this demo
@@ -140,10 +147,12 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       });
       onClose();
     } catch (error: any) {
-      try {
-        handleFirestoreError(error, OperationType.CREATE, 'broadcasts');
-      } catch (e) {
-        console.error('Firestore operation failed:', e);
+      if (!(error instanceof ValidationError)) {
+        try {
+          handleFirestoreError(error, OperationType.CREATE, 'broadcasts');
+        } catch (e) {
+          console.error('Firestore operation failed:', e);
+        }
       }
       const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
       setSubmitError(isOffline 
