@@ -100,7 +100,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
       
       const now = Date.now();
-      const COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes cooldown
+      const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
       const ONE_DAY_MS = 24 * 60 * 60 * 1000;
       
       let latestTime = 0;
