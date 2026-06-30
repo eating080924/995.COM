@@ -15,6 +15,17 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    function isAdmin() {
+      return isSignedIn() && 
+             request.auth.token.email_verified == true &&
+             request.auth.token.email in [
+               'eating080924@gmail.com',
+               'very790804@gmail.com',
+               'ooi12361@gmail.com',
+               'a0939633109@gmail.com'
+             ];
+    }
+
     function isValidId(id) {
       return id is string && id.size() <= 128;
     }
@@ -65,6 +76,7 @@ service cloud.firestore {
                       request.resource.data.createdAt == request.time;
       
       allow update: if isSignedIn() && (
+        isAdmin() ||
         // Action: Accept Task
         (
           resource.data.status == 'open' &&
@@ -77,7 +89,7 @@ service cloud.firestore {
           resource.data.status == 'accepted' &&
           resource.data.acceptorId == request.auth.uid &&
           request.resource.data.status == 'open' &&
-          !('acceptorId' in request.resource.data) &&
+          request.resource.data.get('acceptorId', null) == null &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
         ) ||
         // Action: Complete Task (by owner OR public cleanup)
@@ -95,7 +107,7 @@ service cloud.firestore {
         )
       );
 
-      allow delete: if isOwner(resource.data.requesterId) || (
+      allow delete: if isOwner(resource.data.requesterId) || isAdmin() || (
         // Public Cleanup: Open tasks older than 3 days
         resource.data.status == 'open' && 
         isExpired(resource.data.createdAt, 259200) // 3 days in seconds

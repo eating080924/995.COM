@@ -64,6 +64,19 @@ export function TaskList({ filter, searchQuery }: TaskListProps) {
   }, [filter, user]);
 
   const filteredTasks = tasks.filter(task => {
+    // Filter out expired open tasks on display
+    if (task.status === 'open' && task.deadlineEnd) {
+      try {
+        const now = new Date();
+        const deadlineDate = task.deadlineEnd.toDate ? task.deadlineEnd.toDate() : new Date(task.deadlineEnd);
+        if (deadlineDate < now) {
+          return false;
+        }
+      } catch (e) {
+        console.warn('Error parsing deadlineEnd in TaskList:', e);
+      }
+    }
+
     if (!searchQuery) return true;
     const lowerQuery = searchQuery.toLowerCase();
     return (

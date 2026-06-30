@@ -22,14 +22,15 @@ export async function performTaskCleanup(userId: string | undefined) {
 
     const openTasksQuery = query(
       tasksRef,
-      where('status', '==', 'open')
+      where('status', '==', 'open'),
+      where('requesterId', '==', userId)
     );
 
     let openTasksSnapshot;
     try {
       openTasksSnapshot = await getDocs(openTasksQuery);
     } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'tasks');
+      console.warn('Failed to query open tasks for cleanup:', e);
       return;
     }
 
@@ -47,7 +48,6 @@ export async function performTaskCleanup(userId: string | undefined) {
             return { success: true };
           } catch (e) {
             console.warn(`Failed to auto-delete task ${taskDoc.id}:`, e);
-            handleFirestoreError(e, OperationType.DELETE, `tasks/${taskDoc.id}`);
             return { success: false };
           }
         })
@@ -64,14 +64,15 @@ export async function performTaskCleanup(userId: string | undefined) {
 
     const acceptedTasksQuery = query(
       tasksRef,
-      where('status', '==', 'accepted')
+      where('status', '==', 'accepted'),
+      where('requesterId', '==', userId)
     );
 
     let acceptedTasksSnapshot;
     try {
       acceptedTasksSnapshot = await getDocs(acceptedTasksQuery);
     } catch (e) {
-      handleFirestoreError(e, OperationType.LIST, 'tasks');
+      console.warn('Failed to query accepted tasks for cleanup:', e);
       return;
     }
 
@@ -94,7 +95,6 @@ export async function performTaskCleanup(userId: string | undefined) {
             return { success: true };
           } catch (e) {
             console.warn(`Failed to auto-complete task ${taskDoc.id} (Owner: ${data.requesterId}, Viewer: ${userId}):`, e);
-            handleFirestoreError(e, OperationType.UPDATE, `tasks/${taskDoc.id}`);
             return { success: false };
           }
         })
