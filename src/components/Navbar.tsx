@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { LogIn, LogOut, User as UserIcon, PlusCircle, Radio } from 'lucide-react';
 import { LoginModal } from './LoginModal';
+import { NotificationDropdown } from './NotificationDropdown';
 
 interface NavbarProps {
   onNewTask: () => void;
@@ -64,6 +65,7 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
               <span className="hidden xs:inline">發佈需求</span>
             </button>
             <div className="flex items-center gap-3 ml-2 border-l pl-4 border-slate-100">
+              <NotificationDropdown />
               <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-white shadow-sm overflow-hidden flex items-center justify-center">
                 {user.photoURL ? (
                   <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />

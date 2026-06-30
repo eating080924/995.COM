@@ -1,6 +1,7 @@
 import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { handleFirestoreError, OperationType } from './errorHandler';
+import { sendNotification } from './notificationService';
 
 /**
  * Performs cleanup of tasks for the current user based on the following rules:
@@ -91,6 +92,17 @@ export async function performTaskCleanup(userId: string | undefined) {
               status: 'completed',
               updatedAt: serverTimestamp()
             });
+            if (data.acceptorId) {
+              await sendNotification({
+                userId: data.acceptorId,
+                type: 'task_completed',
+                taskId: taskDoc.id,
+                taskNum: data.taskNum || '',
+                taskContent: data.content || '',
+                senderId: userId,
+                senderName: '系統自動結案',
+              });
+            }
             console.log(`Successfully auto-completed task ${taskDoc.id}`);
             return { success: true };
           } catch (e) {

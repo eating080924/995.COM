@@ -9,6 +9,7 @@ import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
+import { sendNotification } from '../lib/notificationService';
 
 export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const { user } = useAuth();
@@ -96,6 +97,16 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             acceptorId: user.uid,
             updatedAt: serverTimestamp()
           });
+
+          await sendNotification({
+            userId: task.requesterId,
+            type: 'task_accepted',
+            taskId: task.id,
+            taskNum: task.taskNum || '',
+            taskContent: task.content || '',
+            senderId: user.uid,
+            senderName: user.displayName || user.email || '未知使用者',
+          });
         } catch (error: any) {
           try {
             handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
@@ -138,6 +149,16 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             status: 'open',
             acceptorId: deleteField(),
             updatedAt: serverTimestamp()
+          });
+
+          await sendNotification({
+            userId: task.requesterId,
+            type: 'task_unaccepted',
+            taskId: task.id,
+            taskNum: task.taskNum || '',
+            taskContent: task.content || '',
+            senderId: user.uid,
+            senderName: user.displayName || user.email || '未知使用者',
           });
 
           // 2. Apply security cooling down if it's a quick cancel (prevent contact collection spam)
@@ -183,6 +204,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             status: 'completed',
             updatedAt: serverTimestamp()
           });
+
+          if (task.acceptorId) {
+            await sendNotification({
+              userId: task.acceptorId,
+              type: 'task_completed',
+              taskId: task.id,
+              taskNum: task.taskNum || '',
+              taskContent: task.content || '',
+              senderId: user.uid,
+              senderName: user.displayName || user.email || '委託人',
+            });
+          }
         } catch (error: any) {
           try {
             handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
