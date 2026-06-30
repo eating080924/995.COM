@@ -45,7 +45,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       
       const now = Date.now();
       const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
       
       let latestTime = 0;
       let dayCount = 0;
@@ -108,7 +108,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       
       const now = Date.now();
       const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
       
       let latestTime = 0;
       let dayCount = 0;
@@ -131,7 +131,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       }
 
       if (dayCount >= 10) {
-        throw new ValidationError('您已達到每日發布上限 (24 小時內最多 10 則)。');
+        throw new ValidationError('您已達到每日發布上限 (1 小時內最多 10 則)。');
       }
 
       // Set active until 30 minutes from now for this demo
@@ -194,7 +194,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   ? 'bg-red-50 border-red-100 text-red-700' 
                   : (checking ? 'bg-slate-100/50 border-slate-100 animate-pulse' : 'bg-green-50/50 border-green-100/80 text-green-800')
               }`}>
-                <span className="text-[10px] text-slate-500 font-bold">24H 額度限制</span>
+                <span className="text-[10px] text-slate-500 font-bold">1H 額度限制</span>
                 {checking ? (
                   <span className="font-extrabold mt-1">檢查中...</span>
                 ) : (
@@ -229,7 +229,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             </div>
 
             <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-              * 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每日限額 10 則。
+              * 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每小時限額 10 則。
             </p>
           </div>
 
@@ -260,7 +260,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             className="w-full bg-gradient-to-r from-red-600 to-orange-500 text-white py-3 rounded-xl font-bold hover:from-red-700 hover:to-orange-600 transition-all duration-300 disabled:from-slate-200 disabled:to-slate-300 disabled:text-slate-400 flex items-center justify-center gap-2 shadow-lg shadow-red-500/10 hover:shadow-red-500/25 cursor-pointer disabled:cursor-not-allowed text-sm"
           >
             {isSubmitting ? '廣播中...' : (
-              isLimitReached ? '已達今日額度限制' : (
+              isLimitReached ? '已達額度限制' : (
                 isCooldownActive ? '冷卻中限制發送' : '確認發送廣播 (Demo Free)'
               )
             )}
