@@ -6,6 +6,7 @@ import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { X, Loader2, AlertTriangle } from 'lucide-react';
 import { Task } from '../types';
+import { isUserUnlimited } from '../config/unlimitedUsers';
 
 interface TaskFormProps {
   onClose: () => void;
@@ -37,6 +38,11 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   // Check if user already has an active task (status in ['open', 'accepted'])
   React.useEffect(() => {
     if (!taskToEdit && user) {
+      if (isUserUnlimited(user.uid, user.email)) {
+        setHasActiveTask(false);
+        setCheckingActiveTask(false);
+        return;
+      }
       setCheckingActiveTask(true);
       const q = query(
         collection(db, 'tasks'),
@@ -107,16 +113,19 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
         });
       } else {
         // Enforce active task limit on submission
-        const q = query(
-          collection(db, 'tasks'),
-          where('requesterId', '==', user.uid),
-          where('status', 'in', ['open', 'accepted'])
-        );
-        const activeTasksSnapshot = await getDocs(q);
-        if (!activeTasksSnapshot.empty) {
-          setSubmitError('您目前已有進行中或開放中的委託任務，無法發布新任務。');
-          setHasActiveTask(true);
-          return;
+        const isUnlimited = isUserUnlimited(user.uid, user.email);
+        if (!isUnlimited) {
+          const q = query(
+            collection(db, 'tasks'),
+            where('requesterId', '==', user.uid),
+            where('status', 'in', ['open', 'accepted'])
+          );
+          const activeTasksSnapshot = await getDocs(q);
+          if (!activeTasksSnapshot.empty) {
+            setSubmitError('您目前已有進行中或開放中的委託任務，無法發布新任務。');
+            setHasActiveTask(true);
+            return;
+          }
         }
 
         await addDoc(collection(db, 'tasks'), {

@@ -5,6 +5,7 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { X, CreditCard, ShieldAlert, Timer, CheckCircle } from 'lucide-react';
+import { isUserUnlimited } from '../config/unlimitedUsers';
 
 class ValidationError extends Error {
   constructor(message: string) {
@@ -39,6 +40,13 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
     if (!user) return;
     try {
       setChecking(true);
+      
+      if (isUserUnlimited(user.uid, user.email)) {
+        setQuotaUsed(0);
+        setCooldownRemaining(0);
+        return;
+      }
+
       const q = query(collection(db, 'broadcasts'), where('creatorId', '==', user.uid));
       const querySnapshot = await getDocs(q);
       const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
@@ -101,37 +109,40 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
     try {
       setSubmitError(null);
       
-      // Secondary check during submission to prevent bypass
-      const q = query(collection(db, 'broadcasts'), where('creatorId', '==', user.uid));
-      const querySnapshot = await getDocs(q);
-      const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
-      
-      const now = Date.now();
-      const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-      const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
-      
-      let latestTime = 0;
-      let dayCount = 0;
-      
-      userBroadcasts.forEach(b => {
-        const t = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
-        if (t > latestTime) {
-          latestTime = t;
-        }
-        if (now - t < ONE_DAY_MS) {
-          dayCount++;
-        }
-      });
+      const isUnlimited = isUserUnlimited(user.uid, user.email);
+      if (!isUnlimited) {
+        // Secondary check during submission to prevent bypass
+        const q = query(collection(db, 'broadcasts'), where('creatorId', '==', user.uid));
+        const querySnapshot = await getDocs(q);
+        const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
+        
+        const now = Date.now();
+        const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
+        const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
+        
+        let latestTime = 0;
+        let dayCount = 0;
+        
+        userBroadcasts.forEach(b => {
+          const t = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+          if (t > latestTime) {
+            latestTime = t;
+          }
+          if (now - t < ONE_DAY_MS) {
+            dayCount++;
+          }
+        });
 
-      if (latestTime && now - latestTime < COOLDOWN_MS) {
-        const rem = Math.ceil((COOLDOWN_MS - (now - latestTime)) / 1000);
-        const remMin = Math.floor(rem / 60);
-        const remSec = rem % 60;
-        throw new ValidationError(`請勿頻繁發送廣播！冷卻中，請等待 ${remMin} 分 ${remSec} 秒後重試。`);
-      }
+        if (latestTime && now - latestTime < COOLDOWN_MS) {
+          const rem = Math.ceil((COOLDOWN_MS - (now - latestTime)) / 1000);
+          const remMin = Math.floor(rem / 60);
+          const remSec = rem % 60;
+          throw new ValidationError(`請勿頻繁發送廣播！冷卻中，請等待 ${remMin} 分 ${remSec} 秒後重試。`);
+        }
 
-      if (dayCount >= 10) {
-        throw new ValidationError('您已達到每日發布上限 (1 小時內最多 10 則)。');
+        if (dayCount >= 10) {
+          throw new ValidationError('您已達到每日發布上限 (1 小時內最多 10 則)。');
+        }
       }
 
       // Set active until 30 minutes from now for this demo
@@ -162,8 +173,9 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
     }
   };
 
-  const isLimitReached = quotaUsed >= 10;
-  const isCooldownActive = cooldownRemaining > 0;
+  const isUnlimited = isUserUnlimited(user?.uid, user?.email);
+  const isLimitReached = !isUnlimited && quotaUsed >= 10;
+  const isCooldownActive = !isUnlimited && cooldownRemaining > 0;
   const isButtonDisabled = isSubmitting || checking || isLimitReached || isCooldownActive;
 
   return (
@@ -197,6 +209,10 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                 <span className="text-[10px] text-slate-500 font-bold">1H 額度限制</span>
                 {checking ? (
                   <span className="font-extrabold mt-1">檢查中...</span>
+                ) : isUnlimited ? (
+                  <span className="font-extrabold text-sm mt-0.5 text-amber-600 flex items-center gap-1">
+                    無限制 👑
+                  </span>
                 ) : (
                   <span className="font-extrabold text-sm mt-0.5 flex items-center gap-1">
                     {quotaUsed} / 10 則
@@ -214,6 +230,10 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                 <span className="text-[10px] text-slate-500 font-bold">發送冷卻狀態</span>
                 {checking ? (
                   <span className="font-extrabold mt-1">檢查中...</span>
+                ) : isUnlimited ? (
+                  <span className="font-extrabold text-sm mt-0.5 text-amber-600 flex items-center gap-1">
+                    無限制 ⚡
+                  </span>
                 ) : isCooldownActive ? (
                   <span className="font-extrabold text-[11px] mt-0.5 flex items-center gap-1">
                     <Timer size={13} className="animate-spin text-amber-500" />
@@ -229,7 +249,9 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             </div>
 
             <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
-              * 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每小時限額 10 則。
+              {isUnlimited 
+                ? "✨ 您的帳號已啟用免限制特權，發送廣播無冷卻時間且無次數上限。" 
+                : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每小時限額 10 則。"}
             </p>
           </div>
 
