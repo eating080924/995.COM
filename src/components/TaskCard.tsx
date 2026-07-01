@@ -25,27 +25,26 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const handleAccept = async () => {
     if (!user) return;
     
+    // 1. Check local storage first (instant client-side check)
+    const localLastCancel = localStorage.getItem(`lastCancelledAt_${user.uid}`);
+    if (localLastCancel) {
+      const localElapsed = Date.now() - parseInt(localLastCancel, 10);
+      if (localElapsed < 10 * 60 * 1000) { // 10 minutes
+        setConfirmConfig({
+          title: '安全冷卻中 🔒',
+          message: '因您在承接後的 10 分鐘內取消承接，已觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
+          onConfirm: () => {},
+          showCancel: false
+        });
+        return;
+      }
+    }
+    
     setConfirmConfig({
       title: '是否承接任務？',
       message: '⚠️ 提醒：若在承接 10 分鐘內「立刻取消」，將會觸發安全機制並限制 10 分鐘內無法承接任何新任務。',
       onConfirm: async () => {
         try {
-          // 1. Check local storage first (instant client-side check)
-          const localLastCancel = localStorage.getItem(`lastCancelledAt_${user.uid}`);
-          if (localLastCancel) {
-            const localElapsed = Date.now() - parseInt(localLastCancel, 10);
-            if (localElapsed < 10 * 60 * 1000) { // 10 minutes
-              const remainingMinutes = Math.ceil((10 * 60 * 1000 - localElapsed) / 60000);
-              setConfirmConfig({
-                title: '安全冷卻中 🔒',
-                message: `為維護平台秩序並防止聯絡資訊被惡意收集，取消承接後有 10 分鐘安全冷卻期。您目前尚在冷卻時間內，請稍候 ${remainingMinutes} 分鐘後再試。`,
-                onConfirm: () => {},
-                showCancel: false
-              });
-              return;
-            }
-          }
-
           // 2. Fetch remote user profile from Firestore to ensure synchronization across devices
           const userRef = doc(db, 'users', user.uid);
           const userSnap = await getDoc(userRef);
@@ -58,13 +57,12 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             if (lastCancelledAt) {
               const remoteElapsed = Date.now() - lastCancelledAt.getTime();
               if (remoteElapsed < 10 * 60 * 1000) { // 10 minutes
-                const remainingMinutes = Math.ceil((10 * 60 * 1000 - remoteElapsed) / 60000);
                 // Synchronize to localStorage
                 localStorage.setItem(`lastCancelledAt_${user.uid}`, lastCancelledAt.getTime().toString());
                 
                 setConfirmConfig({
                   title: '安全冷卻中 🔒',
-                  message: `為維護平台秩序並防止聯絡資訊被惡意收集，取消承接後有 10 分鐘安全冷卻期。您目前尚在冷卻時間內，請稍候 ${remainingMinutes} 分鐘後再試。`,
+                  message: '因您在承接後的 10 分鐘內取消承接，已觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
                   onConfirm: () => {},
                   showCancel: false
                 });
