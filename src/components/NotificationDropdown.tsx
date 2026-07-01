@@ -15,8 +15,22 @@ export function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
   const [showToast, setShowToast] = useState<AppNotification | null>(null);
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>('default');
+  const [showPwaGuide, setShowPwaGuide] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const startupTime = useRef<number>(Date.now());
+
+  // Register Service Worker for background and mobile notifications
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then((reg) => {
+          console.log('Service Worker registered successfully with scope:', reg.scope);
+        })
+        .catch((err) => {
+          console.error('Service Worker registration failed:', err);
+        });
+    }
+  }, []);
 
   // Subscribe to real-time notifications
   useEffect(() => {
@@ -48,7 +62,7 @@ export function NotificationDropdown() {
             setShowToast(current => current?.id === latestNew.id ? null : current);
           }, 5000);
 
-          // Trigger Native Browser Notification as progressive enhancement
+          // Trigger Native Browser Notification (highly optimized for mobile via Service Worker)
           if (Notification.permission === 'granted') {
             const title = 
               latestNew.type === 'task_accepted' ? '任務已被承接 🚀' :
@@ -56,14 +70,29 @@ export function NotificationDropdown() {
             
             const body = `任務 [${latestNew.taskNum}] ${latestNew.taskContent.slice(0, 30)}... \n異動者: ${latestNew.senderName}`;
             
-            try {
-              new Notification(title, {
-                body,
-                icon: '/favicon.ico', // fallback icon if available
-                tag: latestNew.id,
+            // Try Service Worker first for background notification (essential for mobile)
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.controller.postMessage({
+                type: 'SHOW_NOTIFICATION',
+                title,
+                options: {
+                  body,
+                  tag: latestNew.id,
+                  icon: '/icon-192.png',
+                  badge: '/icon-192.png',
+                }
               });
-            } catch (e) {
-              console.warn('Failed to display native notification:', e);
+            } else {
+              // Fallback to standard document notification
+              try {
+                new Notification(title, {
+                  body,
+                  icon: '/icon-192.png',
+                  tag: latestNew.id,
+                });
+              } catch (e) {
+                console.warn('Failed to display native notification:', e);
+              }
             }
           }
         }
@@ -191,18 +220,77 @@ export function NotificationDropdown() {
               </div>
             </div>
 
-            {/* Desktop Notification Request banner */}
-            {desktopPermission === 'default' && (
-              <div className="p-3 bg-amber-50 border-b border-amber-100 text-amber-800 text-xs flex flex-col gap-1.5 font-medium">
-                <span>🔔 開啟「裝置桌面通知」，即便在其他網頁也能即時收到進度通知！</span>
+            {/* Desktop & Mobile Notification Request Banner */}
+            <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs flex flex-col gap-2">
+              {desktopPermission === 'default' ? (
+                <div className="flex flex-col gap-1.5 font-semibold text-slate-700">
+                  <span>🔔 開啟「瀏覽器通知」，隨時接收任務承接與結案即時通知！</span>
+                  <button
+                    onClick={requestDesktopPermission}
+                    className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg self-start transition-all shadow-sm active:scale-95"
+                  >
+                    啟用桌面通知
+                  </button>
+                </div>
+              ) : desktopPermission === 'granted' ? (
+                <div className="text-emerald-700 font-bold flex items-center gap-1">
+                  <span>🟢 瀏覽器通知已啟用，將會收到即時狀態更新！</span>
+                </div>
+              ) : (
+                <div className="text-red-600 font-bold">
+                  <span>⚠️ 瀏覽器通知已被封鎖。若要接收通知，請至瀏覽器設定中開啟。</span>
+                </div>
+              )}
+
+              {/* Mobile Background PWA Install Guide */}
+              <div className="border-t border-slate-200 pt-2 mt-1">
                 <button
-                  onClick={requestDesktopPermission}
-                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg self-start transition-colors"
+                  onClick={() => setShowPwaGuide(!showPwaGuide)}
+                  className="w-full flex items-center justify-between text-slate-500 hover:text-slate-800 font-bold transition-colors"
                 >
-                  啟用桌面通知
+                  <span className="flex items-center gap-1">
+                    📱 如何在手機未開啟/背景時收到通知？
+                  </span>
+                  <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
+                    {showPwaGuide ? '收合' : '展開說明'}
+                  </span>
                 </button>
+
+                <AnimatePresence>
+                  {showPwaGuide && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden text-slate-600 space-y-2 mt-2 bg-white p-2.5 rounded-lg border border-slate-100 font-normal leading-relaxed"
+                    >
+                      <p className="font-semibold text-slate-800 text-[11px]">
+                        手機系統（特別是 iOS 16.4+ 與 Android）為了保障隱私及省電，<span className="text-red-500 font-bold">必須將此平台「安裝至主畫面」</span>才能在背景接收即時通知：
+                      </p>
+                      
+                      <div className="space-y-1.5 text-[11px]">
+                        <div className="flex items-start gap-1">
+                          <span className="font-bold text-red-500">Apple iOS:</span>
+                          <span>
+                            使用 Safari 瀏覽器，點擊底部或頂部的<strong>「分享 📤」</strong>按鈕，選單中點選<strong>「加入主畫面 ➕」</strong>。從桌面打開安裝好的 App，並依提示允許通知。
+                          </span>
+                        </div>
+                        <div className="flex items-start gap-1">
+                          <span className="font-bold text-red-500">Android:</span>
+                          <span>
+                            使用 Chrome 瀏覽器，點擊右上角<strong>「選單 ⁝」</strong>，點選<strong>「安裝應用程式」</strong>或<strong>「加到主畫面」</strong>。打開桌面的 App 並允許通知。
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-1 flex items-center gap-1">
+                        <span>🛡️ 本平台已內建 PWA 服務，加入主畫面即可享有完整的原生 App 背景通知體驗！</span>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            )}
+            </div>
 
             {/* Notification List */}
             <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
