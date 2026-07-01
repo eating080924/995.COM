@@ -27,9 +27,6 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
           className="w-30 h-20 object-contain" 
         />
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800">
-             <span className="text-black-500 decoration-2 underline-offset-4"> 《找到屬於你的超人》</span>
-          </h1>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>
         </div>
       </div>
