@@ -24,7 +24,7 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
         <img 
           src="logo.png" 
           alt="995 委託板" 
-          className="w-30 h-auto object-contain" 
+          className="w-30 h-20 object-contain" 
         />
         <div>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>
