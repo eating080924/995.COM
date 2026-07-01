@@ -22,9 +22,9 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
     <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
       <div className="flex items-center gap-3">
         <img 
-          src="./logo_index.png" 
+          src="logo.png" 
           alt="995 委託板" 
-          className="w-30 h-20 object-contain" 
+          className="w-30 h-auto object-contain" 
         />
         <div>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>
