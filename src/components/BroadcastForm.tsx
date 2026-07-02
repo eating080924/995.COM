@@ -4,8 +4,9 @@ import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs }
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
-import { X, CreditCard, ShieldAlert, Timer, CheckCircle } from 'lucide-react';
+import { X, CreditCard, ShieldAlert, Timer, CheckCircle, Link } from 'lucide-react';
 import { isUserUnlimited } from '../config/unlimitedUsers';
+import { Task } from '../types';
 
 class ValidationError extends Error {
   constructor(message: string) {
@@ -20,6 +21,7 @@ interface BroadcastFormProps {
 
 interface FormData {
   content: string;
+  selectedTaskId?: string;
 }
 
 export function BroadcastForm({ onClose }: BroadcastFormProps) {
@@ -28,6 +30,23 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
   const [checking, setChecking] = React.useState(true);
   const [quotaUsed, setQuotaUsed] = React.useState(0);
   const [cooldownRemaining, setCooldownRemaining] = React.useState(0);
+  const [userTasks, setUserTasks] = React.useState<Task[]>([]);
+
+  // Fetch user's active tasks to populate linkage options
+  React.useEffect(() => {
+    if (!user) return;
+    const q = query(
+      collection(db, 'tasks'),
+      where('requesterId', '==', user.uid),
+      where('status', '==', 'open')
+    );
+    getDocs(q).then((snapshot) => {
+      const docs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Task[];
+      setUserTasks(docs);
+    }).catch(err => {
+      console.error('Failed to fetch user tasks for linkage selection:', err);
+    });
+  }, [user]);
 
   // Close form immediately if user is not logged in (e.g., during sign out or page load delays)
   React.useEffect(() => {
@@ -145,16 +164,20 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         }
       }
 
-      // Set active until 30 minutes from now for this demo
+      // Set active until 10 minutes from now for this demo
       const expiry = new Date();
-      expiry.setMinutes(expiry.getMinutes() + 30);
+      expiry.setMinutes(expiry.getMinutes() + 10);
+
+      const selectedTask = userTasks.find(t => t.id === data.selectedTaskId);
 
       await addDoc(collection(db, 'broadcasts'), {
         content: data.content,
         creatorId: user.uid,
         userName: user.displayName || '匿名用戶',
         activeUntil: Timestamp.fromDate(expiry),
-        createdAt: serverTimestamp()
+        createdAt: serverTimestamp(),
+        taskId: data.selectedTaskId || null,
+        taskNum: selectedTask ? selectedTask.taskNum : null
       });
       onClose();
     } catch (error: any) {
@@ -211,7 +234,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   <span className="font-extrabold mt-1">檢查中...</span>
                 ) : isUnlimited ? (
                   <span className="font-extrabold text-sm mt-0.5 text-amber-600 flex items-center gap-1">
-                    無限制 👑
+                    無限制
                   </span>
                 ) : (
                   <span className="font-extrabold text-sm mt-0.5 flex items-center gap-1">
@@ -232,7 +255,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   <span className="font-extrabold mt-1">檢查中...</span>
                 ) : isUnlimited ? (
                   <span className="font-extrabold text-sm mt-0.5 text-amber-600 flex items-center gap-1">
-                    無限制 ⚡
+                    無限制
                   </span>
                 ) : isCooldownActive ? (
                   <span className="font-extrabold text-[11px] mt-0.5 flex items-center gap-1">
@@ -250,7 +273,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
 
             <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
               {isUnlimited 
-                ? "✨ 您的帳號已啟用免限制特權，發送廣播無冷卻時間且無次數上限。" 
+                ? "您的帳號已啟用免限制特權，發送廣播無冷卻時間且無次數上限。" 
                 : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每小時限額 10 則。"}
             </p>
           </div>
@@ -268,6 +291,30 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             />
             {errors.content && <p className="text-red-500 text-xs mt-1.5 font-bold flex items-center gap-1">⚠️ {errors.content.message}</p>}
           </div>
+
+          {userTasks.length > 0 && (
+            <div className="space-y-1.5 animate-fade-in">
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                <Link size={13} className="text-red-500" />
+                <span>連動我的委託任務 (選填)</span>
+              </label>
+              <select
+                {...register('selectedTaskId')}
+                disabled={isButtonDisabled}
+                className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-400"
+              >
+                <option value="">-- 不連動任務 --</option>
+                {userTasks.map(task => (
+                  <option key={task.id} value={task.id}>
+                    [{task.taskNum.slice(-6)}] {task.content.slice(0, 30)}...
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400 font-medium leading-relaxed">
+                💡 連動後，其他使用者點擊您的廣播能直接滾動並「高亮指引」至該委託卡片！
+              </p>
+            </div>
+          )}
 
           {submitError && (
             <div className="bg-red-50 text-red-700 text-xs font-bold p-3.5 rounded-xl border border-red-100 flex items-start gap-2">

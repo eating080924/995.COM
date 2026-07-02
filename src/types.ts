@@ -23,6 +23,9 @@ export interface Broadcast {
   creatorId: string;
   activeUntil: any;
   createdAt: any;
+  userName?: string;
+  taskId?: string;
+  taskNum?: string;
 }
 
 export interface UserProfile {

@@ -44,6 +44,41 @@ function AppContent() {
     }
   }, [user, activeTab]);
 
+  // Handle task linkage scrolling and highlighting from broadcasts
+  React.useEffect(() => {
+    const handleLinkToTask = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { taskId, taskNum } = customEvent.detail || {};
+      if (!taskId) return;
+
+      // 1. Reset filter tab to 'all' so the task is guaranteed to be in the list
+      setActiveTab('all');
+      
+      // 2. Clear or set the search query to the taskNum to immediately filter down to that task
+      setSearchQuery(taskNum || '');
+
+      // 3. Scroll to the element after a short timeout to let the state update and render
+      setTimeout(() => {
+        const element = document.getElementById(`task-card-${taskId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          // Add a highly visible glowing amber ring animation to draw focus
+          element.classList.add('ring-4', 'ring-red-500', 'ring-offset-2', 'animate-pulse', 'shadow-[0_0_30px_rgba(239,68,68,0.5)]');
+          
+          setTimeout(() => {
+            element.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2', 'animate-pulse', 'shadow-[0_0_30px_rgba(239,68,68,0.5)]');
+          }, 4000);
+        } else {
+          console.warn('Could not find task element with ID:', `task-card-${taskId}`);
+        }
+      }, 350);
+    };
+
+    window.addEventListener('link-to-task', handleLinkToTask);
+    return () => window.removeEventListener('link-to-task', handleLinkToTask);
+  }, []);
+
   const requireLogin = (action: () => void) => {
     if (user) {
       action();
