@@ -4,6 +4,8 @@ import {
   subscribeNotifications, 
   markAsRead, 
   markAllAsRead, 
+  deleteNotification,
+  clearAllNotifications,
   AppNotification 
 } from '../lib/notificationService';
 import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
@@ -16,6 +18,7 @@ export function NotificationDropdown() {
   const [showToast, setShowToast] = useState<AppNotification | null>(null);
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>('default');
   const [showPwaGuide, setShowPwaGuide] = useState(false);
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const startupTime = useRef<number>(Date.now());
 
@@ -207,7 +210,7 @@ export function NotificationDropdown() {
                 <span className="font-bold text-slate-800 text-sm">通知中心</span>
               </div>
               
-              <div className="flex gap-2">
+              <div className="flex items-center gap-3">
                 {unreadCount > 0 && (
                   <button
                     onClick={() => markAllAsRead(user.uid)}
@@ -216,6 +219,40 @@ export function NotificationDropdown() {
                     <Check size={12} strokeWidth={3} />
                     <span>全部已讀</span>
                   </button>
+                )}
+
+                {notifications.length > 0 && (
+                  <div className="relative flex items-center">
+                    {showConfirmClear ? (
+                      <div className="flex items-center gap-1.5 bg-red-50 px-2 py-1 rounded-lg border border-red-100 animate-fade-in shadow-sm">
+                        <span className="text-[10px] text-red-600 font-black shrink-0">清除全部？</span>
+                        <button
+                          onClick={async () => {
+                            await clearAllNotifications(user.uid);
+                            setShowConfirmClear(false);
+                          }}
+                          className="text-[9px] bg-red-500 hover:bg-red-600 text-white font-black px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          確認
+                        </button>
+                        <button
+                          onClick={() => setShowConfirmClear(false)}
+                          className="text-[9px] bg-slate-200 hover:bg-slate-300 text-slate-700 font-black px-1.5 py-0.5 rounded transition-colors"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowConfirmClear(true)}
+                        className="text-xs text-slate-500 hover:text-red-500 font-bold flex items-center gap-0.5 transition-colors"
+                        title="清除所有通知紀錄"
+                      >
+                        <Trash2 size={12} />
+                        <span>清除全部</span>
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -324,9 +361,20 @@ export function NotificationDropdown() {
                       <div className="flex-1 space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-black text-slate-800">{details.title}</span>
-                          {!n.read && (
-                            <span className="text-[9px] bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full">新</span>
-                          )}
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            {!n.read && (
+                              <span className="text-[9px] bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full shrink-0">新</span>
+                            )}
+                            <button
+                              onClick={async () => {
+                                await deleteNotification(n.id);
+                              }}
+                              className="text-slate-400 hover:text-red-500 hover:bg-slate-100/80 p-1 rounded-md transition-colors shrink-0"
+                              title="刪除此通知"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
                         </div>
                         <p className="text-xs font-semibold text-slate-600 leading-relaxed">
                           {details.desc}

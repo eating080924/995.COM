@@ -9,9 +9,11 @@ import {
   doc,
   updateDoc,
   writeBatch,
-  getDocs
+  getDocs,
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { handleFirestoreError, OperationType } from './errorHandler';
 
 export interface AppNotification {
   id: string;
@@ -129,5 +131,41 @@ export async function markAllAsRead(userId: string) {
     await batch.commit();
   } catch (error) {
     console.error('Failed to mark all notifications as read:', error);
+    handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+  }
+}
+
+/**
+ * Delete a single notification.
+ */
+export async function deleteNotification(notificationId: string) {
+  try {
+    const docRef = doc(db, 'notifications', notificationId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    console.error('Failed to delete notification:', error);
+    handleFirestoreError(error, OperationType.DELETE, `notifications/${notificationId}`);
+  }
+}
+
+/**
+ * Clear all notifications for a user.
+ */
+export async function clearAllNotifications(userId: string) {
+  try {
+    const notificationsRef = collection(db, 'notifications');
+    const q = query(
+      notificationsRef,
+      where('userId', '==', userId)
+    );
+    const querySnapshot = await getDocs(q);
+    const batch = writeBatch(db);
+    querySnapshot.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
+  } catch (error) {
+    console.error('Failed to clear all notifications:', error);
+    handleFirestoreError(error, OperationType.DELETE, 'notifications');
   }
 }

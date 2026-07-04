@@ -13,7 +13,15 @@ export function BroadcastMarquee() {
   const [isPaused, setIsPaused] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [screenCenterBroadcast, setScreenCenterBroadcast] = useState<Broadcast | null>(null);
+  const [hasHoverSupport, setHasHoverSupport] = useState(false);
   const DEFAULT_MESSAGE = "歡迎使用 995 委託板 —— 互助互惠，世界和平！";
+
+  // Check hover support for SSR/hydration safety
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setHasHoverSupport(window.matchMedia('(hover: hover)').matches);
+    }
+  }, []);
 
   // Keep track of broadcast IDs that have already been displayed in the center pop-up in this session
   const poppedUpIds = useRef<Set<string>>(new Set());
@@ -111,8 +119,8 @@ export function BroadcastMarquee() {
   return (
     <div className="flex flex-col">
       <div 
-        onMouseEnter={() => setIsPaused(true)}
-        onMouseLeave={() => setIsPaused(false)}
+        onMouseEnter={() => { if (hasHoverSupport) setIsPaused(true); }}
+        onMouseLeave={() => { if (hasHoverSupport) setIsPaused(false); }}
         className={cn(
           "relative py-3 shadow-xl overflow-hidden transition-all duration-500 border-b",
           currentItem 
