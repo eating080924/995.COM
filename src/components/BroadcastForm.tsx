@@ -72,7 +72,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       
       const now = Date.now();
       const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-      const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
+      const ONE_DAY_MS = 4 * 60 * 60 * 1000; // 4 hour reset
       
       let latestTime = 0;
       let dayCount = 0;
@@ -137,7 +137,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         
         const now = Date.now();
         const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-        const ONE_DAY_MS = 1 * 60 * 60 * 1000; // 1 hour reset
+        const ONE_DAY_MS = 4 * 60 * 60 * 1000; // 4 hour reset
         
         let latestTime = 0;
         let dayCount = 0;
@@ -229,7 +229,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   ? 'bg-red-50 border-red-100 text-red-700' 
                   : (checking ? 'bg-slate-100/50 border-slate-100 animate-pulse' : 'bg-green-50/50 border-green-100/80 text-green-800')
               }`}>
-                <span className="text-[10px] text-slate-500 font-bold">1H 額度限制</span>
+                <span className="text-[10px] text-slate-500 font-bold">4H 額度限制</span>
                 {checking ? (
                   <span className="font-extrabold mt-1">檢查中...</span>
                 ) : isUnlimited ? (
