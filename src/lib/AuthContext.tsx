@@ -162,16 +162,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
 
-    // 2. Standalone PWA Mode
-    // For installed/standalone apps, popups don't behave nicely or establish cross-window state,
-    // so signInWithRedirect is the most suitable approach.
-    if (isStandalone) {
-      console.log('[PWA Standalone] Triggering signInWithRedirect...');
+    // 2. Mobile Device or Standalone PWA Mode
+    // On mobile browsers (such as iOS Safari/Chrome/Firefox or Android browsers), popups often open in a new tab,
+    // fail to communicate their authentication results back to the original tab, fail to close automatically,
+    // or are blocked completely by default browser popup blockers.
+    // Since we are proxying /__/auth locally to act as a custom auth domain, signInWithRedirect is 100% stable,
+    // fully bypasses Intelligent Tracking Prevention (ITP) issues, and is the official standard for mobile devices.
+    if (isMobile || isStandalone) {
+      console.log(`[Mobile/PWA] Triggering stable signInWithRedirect for ${providerType}...`);
       localStorage.setItem('db995_pending_redirect', providerType);
       return signInWithRedirect(auth, provider)
         .catch((redirectError: any) => {
-          console.error(`${providerType} PWA Redirect Sign-in error:`, redirectError);
-          // Fallback to popup if redirect fails
+          console.error(`${providerType} Mobile/PWA Redirect error, trying fallback to popup:`, redirectError);
           return signInWithPopup(auth, provider)
             .then((result) => {
               if (result.user) {
@@ -186,18 +188,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             })
             .catch((popupError: any) => {
-              console.error(`${providerType} PWA Fallback Popup Sign-in error:`, popupError);
+              console.error(`${providerType} Mobile Fallback Popup Sign-in error:`, popupError);
               alert(`登入失敗，請確認是否允許彈出視窗後重試：${popupError.message}`);
               throw popupError;
             });
         });
     }
 
-    // 3. Normal Browsers (Desktop & Mobile)
-    // For normal browsers, we prefer signInWithPopup.
-    // On iOS Safari/Chrome, signInWithPopup works best because it avoids Safari ITP (Intelligent Tracking Prevention) issues,
-    // and bypasses the Facebook/Google redirect URI whitelisting requirements of dynamic Run domains.
-    console.log(`[Browser] Triggering synchronous signInWithPopup for ${providerType}...`);
+    // 3. Desktop Browsers
+    // For desktop browsers, we prefer signInWithPopup for a seamless, in-context login experience.
+    console.log(`[Desktop Browser] Triggering synchronous signInWithPopup for ${providerType}...`);
     return signInWithPopup(auth, provider)
       .then((result) => {
         if (result.user) {
