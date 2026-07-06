@@ -11,7 +11,7 @@ import {
 } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { isInAppBrowser } from './detector';
+import { isInAppBrowser, isMobileDevice } from './detector';
 
 interface AuthContextType {
   user: User | null;
@@ -75,6 +75,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
     const isiOSOrSafari = isIOS || isSafari;
     const isWebview = isInAppBrowser();
+    const isMobile = isMobileDevice();
+    const isStandalone = typeof window !== 'undefined' && (
+      window.matchMedia('(display-mode: standalone)').matches || 
+      (window.navigator as any).standalone === true
+    );
 
     // 1. If inside an App's In-App Browser (LINE, Webview, Facebook App, WeChat, etc.)
     // signInWithPopup is guaranteed to hang, freeze, or fail because popups are blocked/unsupported.
@@ -98,10 +103,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // 2. Mobile devices or PWA Standalone Mode
+    // signInWithRedirect is the industry standard and most robust method.
+    // Popups are highly unstable, frequently blocked, and do not persist session properly on mobile browsers or installed PWAs.
+    if (isMobile || isStandalone) {
+      console.log(`[PWA/Mobile] Directly triggering signInWithRedirect for ${providerType}...`);
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError) {
+        console.error(`${providerType} Mobile Redirect Sign-in error:`, redirectError);
+        // Resilient fallback: try popup if redirect was somehow blocked or failed to load
+        try {
+          await signInWithPopup(auth, provider);
+        } catch (popupError: any) {
+          console.error(`${providerType} Mobile Fallback Popup Sign-in error:`, popupError);
+          alert(`登入失敗，請確認是否允許彈出視窗後重試，或嘗試使用其他瀏覽器開啟網站。\n(錯誤: ${popupError.message || popupError})`);
+        }
+      }
+      return;
+    }
+
+    // 3. Desktop browsers
+    // Prefer signInWithPopup first for optimal, non-reloading UX.
     try {
-      // Try popup sign-in first on normal mobile/desktop browsers (Safari, Chrome, etc.).
-      // On modern mobile devices (Safari & Chrome), when triggered directly by user click,
-      // signInWithPopup works reliably and safely circumvents the third-party cookie restrictions.
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       console.warn(`${providerType} popup sign-in error:`, error);
@@ -117,28 +141,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // If we are on iOS or Safari, we MUST NOT use signInWithRedirect as Safari's Intelligent Tracking
-      // Prevention (ITP) blocks third-party storage/cookie access from cross-site domains (e.g. firebaseapp.com vs run.app),
-      // which guarantees that any redirect authentication state will be lost upon returning, leaving the user signed out.
-      if (isiOSOrSafari) {
+      // If popup fails or is blocked on desktop, fallback to redirect
+      console.log('Falling back to signInWithRedirect on desktop...');
+      try {
+        await signInWithRedirect(auth, provider);
+      } catch (redirectError: any) {
+        console.error(`${providerType} Desktop Redirect Sign-in fallback error:`, redirectError);
         if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/web-storage-unsupported') {
           alert(
             providerType === 'facebook'
-              ? '由於您使用的瀏覽器限制（例如：Safari 或 iOS 的彈出視窗與第三方 Cookie 阻擋），Facebook 登入功能被攔截了。請嘗試「允許此來源的彈出視窗」，或使用 Google 登入。'
+              ? '由於您使用的瀏覽器限制（例如彈出視窗與第三方 Cookie 阻擋），Facebook 登入彈出視窗被封鎖了。請嘗試「允許此來源的彈出視窗」，或點選重新載入重導向。'
               : '由於瀏覽器限制，登入彈出視窗被攔截了。請嘗試「允許此來源的彈出視窗」以完成登入。'
           );
         } else {
-          alert('登入失敗，請確認是否允許彈出視窗後重試，或嘗試使用其他瀏覽器。');
+          alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
         }
-        return;
-      }
-
-      // For non-iOS/non-Safari environments (like Android Chrome / FireFox / Desktop), we can safely fall back to redirect.
-      console.log('Non-iOS/Safari browser. Falling back to signInWithRedirect...');
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (redirectError) {
-        console.error(`${providerType} Redirect Sign-in error:`, redirectError);
       }
     }
   };

@@ -195,7 +195,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
               >
                 <Facebook size={16} className="fill-white stroke-none" />
                 <span>
-                  {loading === 'facebook' ? '登入中...' : 'Facebook 登入 (異常修復中)'}
+                  {loading === 'facebook' ? '登入中...' : 'Facebook 登入'}
                 </span>
               </button>
             </div>
