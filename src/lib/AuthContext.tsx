@@ -63,6 +63,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch((error) => {
         console.error('Redirect sign-in error:', error);
+      })
+      .finally(() => {
+        // Handle pending redirect status check (e.g. if we returned from Facebook but still aren't logged in due to ITP)
+        if (typeof window !== 'undefined') {
+          const pendingProvider = localStorage.getItem('db995_pending_redirect');
+          if (pendingProvider) {
+            localStorage.removeItem('db995_pending_redirect');
+            // Give it a short delay to let onAuthStateChanged settle
+            setTimeout(() => {
+              if (!auth.currentUser) {
+                alert(
+                  `【${pendingProvider === 'facebook' ? 'Facebook' : 'Google'} 登入同步提示】\n\n` +
+                  `您剛才使用了 ${pendingProvider === 'facebook' ? 'Facebook' : 'Google'} 登入，但因您使用的手機瀏覽器（如 iOS Safari 或部分 Chrome）啟用了「防止跨網站追蹤」或阻擋了第三方儲存空間，導致您的登入認證無法順利寫入本站。\n\n` +
+                  `【強烈建議解決方法】\n` +
+                  `1. 推薦使用【Google 登入】，在多數裝置與瀏覽器上最穩定且不易遺失狀態。\n` +
+                  `2. 允許瀏覽器的「彈出視窗」（在點擊登入時不要封鎖彈出視窗），這樣就能免重導向、直接在安全視窗中完成登入並寫入本站！\n` +
+                  `3. 您也可以至手機的「設定」->「Safari」-> 將「防止跨網站追蹤」暫時關閉，然後重新整理本網頁再次嘗試。`
+                );
+              }
+            }, 1200);
+          }
+        }
       });
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -101,10 +123,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  const signIn = async (providerType: 'google' | 'facebook' = 'google') => {
+  const signIn = (providerType: 'google' | 'facebook' = 'google'): Promise<void> => {
     const provider = providerType === 'facebook' 
       ? new FacebookAuthProvider() 
       : new GoogleAuthProvider();
+    
+    if (providerType === 'facebook') {
+      // Set touch display mode to optimize Facebook login UI inside mobile popups!
+      provider.setCustomParameters({
+        display: 'touch'
+      });
+    }
     
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
                   (navigator.userAgent.includes("Mac") && "ontouchend" in document);
@@ -131,12 +160,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
       
       // Still trigger redirect in background just in case, but warn them
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (redirectError) {
-        console.error('In-App Redirect error:', redirectError);
-      }
-      return;
+      localStorage.setItem('db995_pending_redirect', providerType);
+      return signInWithRedirect(auth, provider).catch((err) => {
+        console.error('In-App Redirect error:', err);
+      });
     }
 
     // 2. Standalone PWA Mode
@@ -144,19 +171,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // so signInWithRedirect is the most suitable approach.
     if (isStandalone) {
       console.log('[PWA Standalone] Triggering signInWithRedirect...');
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (redirectError: any) {
-        console.error(`${providerType} PWA Redirect Sign-in error:`, redirectError);
-        // Fallback to popup if redirect fails
-        try {
-          await signInWithPopup(auth, provider);
-        } catch (popupError: any) {
-          console.error(`${providerType} PWA Fallback Popup Sign-in error:`, popupError);
-          alert(`登入失敗，請確認是否允許彈出視窗後重試：${popupError.message}`);
-        }
-      }
-      return;
+      localStorage.setItem('db995_pending_redirect', providerType);
+      return signInWithRedirect(auth, provider)
+        .catch((redirectError: any) => {
+          console.error(`${providerType} PWA Redirect Sign-in error:`, redirectError);
+          // Fallback to popup if redirect fails
+          return signInWithPopup(auth, provider)
+            .then((result) => {
+              if (result.user) {
+                const lightUser = {
+                  uid: result.user.uid,
+                  displayName: result.user.displayName || '匿名用戶',
+                  photoURL: result.user.photoURL,
+                  email: result.user.email,
+                };
+                localStorage.setItem('db995_user', JSON.stringify(lightUser));
+                setUser(result.user);
+              }
+            })
+            .catch((popupError: any) => {
+              console.error(`${providerType} PWA Fallback Popup Sign-in error:`, popupError);
+              alert(`登入失敗，請確認是否允許彈出視窗後重試：${popupError.message}`);
+              throw popupError;
+            });
+        });
     }
 
     // 3. Normal Mobile & Desktop browsers
@@ -164,42 +202,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // This allows credentials to be transferred directly via window.postMessage, and written directly into
     // our first-party domain's IndexedDB. Thus, Safari's third-party ITP cookie restrictions are completely bypassed,
     // and refreshing the page will keep the user logged in perfectly!
-    console.log(`[Browser] Triggering signInWithPopup for ${providerType}...`);
-    try {
-      const result = await signInWithPopup(auth, provider);
-      if (result.user) {
-        const lightUser = {
-          uid: result.user.uid,
-          displayName: result.user.displayName || '匿名用戶',
-          photoURL: result.user.photoURL,
-          email: result.user.email,
-        };
-        localStorage.setItem('db995_user', JSON.stringify(lightUser));
-        setUser(result.user);
-      }
-    } catch (error: any) {
-      console.warn(`${providerType} popup sign-in error:`, error);
-      
-      const errorCode = error?.code;
-      // If the user closed the popup, cancelled, or it's a cancellation error, DO NOT redirect.
-      if (
-        errorCode === 'auth/popup-closed-by-user' || 
-        errorCode === 'auth/cancelled-popup-request' ||
-        errorCode === 'auth/user-cancelled'
-      ) {
-        console.log('Sign-in cancelled by user. Skipping redirect.');
-        return;
-      }
+    console.log(`[Browser] Triggering synchronous signInWithPopup for ${providerType}...`);
+    return signInWithPopup(auth, provider)
+      .then((result) => {
+        if (result.user) {
+          const lightUser = {
+            uid: result.user.uid,
+            displayName: result.user.displayName || '匿名用戶',
+            photoURL: result.user.photoURL,
+            email: result.user.email,
+          };
+          localStorage.setItem('db995_user', JSON.stringify(lightUser));
+          setUser(result.user);
+        }
+      })
+      .catch((error: any) => {
+        console.warn(`${providerType} popup sign-in error:`, error);
+        
+        const errorCode = error?.code;
+        // If the user closed the popup, cancelled, or it's a cancellation error, DO NOT redirect.
+        if (
+          errorCode === 'auth/popup-closed-by-user' || 
+          errorCode === 'auth/cancelled-popup-request' ||
+          errorCode === 'auth/user-cancelled'
+        ) {
+          console.log('Sign-in cancelled by user. Skipping redirect.');
+          return;
+        }
 
-      // If popup is blocked or fails, fallback to redirect
-      console.log('Falling back to signInWithRedirect...');
-      try {
-        await signInWithRedirect(auth, provider);
-      } catch (redirectError: any) {
-        console.error(`${providerType} Redirect fallback error:`, redirectError);
-        alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
-      }
-    }
+        // If popup is blocked or fails, fallback to redirect
+        console.log('Falling back to signInWithRedirect...');
+        localStorage.setItem('db995_pending_redirect', providerType);
+        return signInWithRedirect(auth, provider)
+          .catch((redirectError: any) => {
+            console.error(`${providerType} Redirect fallback error:`, redirectError);
+            alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
+            throw redirectError;
+          });
+      });
   };
 
   const logout = async () => {
