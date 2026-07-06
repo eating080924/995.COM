@@ -135,10 +135,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
     }
     
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || 
-                  (navigator.userAgent.includes("Mac") && "ontouchend" in document);
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    const isiOSOrSafari = isIOS || isSafari;
     const isWebview = isInAppBrowser();
     const isMobile = isMobileDevice();
     const isStandalone = typeof window !== 'undefined' && (
@@ -197,11 +193,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
     }
 
-    // 3. Normal Mobile & Desktop browsers
-    // Prefer signInWithPopup first! When triggered directly by clicking a button, mobile Safari/Chrome will open it as a popup.
-    // This allows credentials to be transferred directly via window.postMessage, and written directly into
-    // our first-party domain's IndexedDB. Thus, Safari's third-party ITP cookie restrictions are completely bypassed,
-    // and refreshing the page will keep the user logged in perfectly!
+    // 3. Normal Browsers (Desktop & Mobile)
+    // For normal browsers, we prefer signInWithPopup.
+    // On iOS Safari/Chrome, signInWithPopup works best because it avoids Safari ITP (Intelligent Tracking Prevention) issues,
+    // and bypasses the Facebook/Google redirect URI whitelisting requirements of dynamic Run domains.
     console.log(`[Browser] Triggering synchronous signInWithPopup for ${providerType}...`);
     return signInWithPopup(auth, provider)
       .then((result) => {
@@ -236,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return signInWithRedirect(auth, provider)
           .catch((redirectError: any) => {
             console.error(`${providerType} Redirect fallback error:`, redirectError);
-            alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
+            alert(`登入失敗，請確認是否允許彈出視窗：${redirectError.message || redirectError}`);
             throw redirectError;
           });
       });
