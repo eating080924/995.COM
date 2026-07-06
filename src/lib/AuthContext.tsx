@@ -23,8 +23,27 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<User | null>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('db995_user');
+      if (cached) {
+        try {
+          return JSON.parse(cached) as User;
+        } catch (e) {
+          return null;
+        }
+      }
+    }
+    return null;
+  });
+
+  const [loading, setLoading] = useState(() => {
+    if (typeof window !== 'undefined') {
+      // If we have a cached user, we can immediately render the logged-in state without blocking loading spinners
+      return !localStorage.getItem('db995_user');
+    }
+    return true;
+  });
 
   useEffect(() => {
     // Check for redirect result when the page loads (handles redirect sign-in login on mobile)
@@ -32,6 +51,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then((result) => {
         if (result?.user) {
           console.log('Successfully signed in via redirect:', result.user);
+          const lightUser = {
+            uid: result.user.uid,
+            displayName: result.user.displayName || '匿名用戶',
+            photoURL: result.user.photoURL,
+            email: result.user.email,
+          };
+          localStorage.setItem('db995_user', JSON.stringify(lightUser));
+          setUser(result.user);
         }
       })
       .catch((error) => {
@@ -40,6 +67,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
+        const lightUser = {
+          uid: firebaseUser.uid,
+          displayName: firebaseUser.displayName || '匿名用戶',
+          photoURL: firebaseUser.photoURL,
+          email: firebaseUser.email,
+        };
+        localStorage.setItem('db995_user', JSON.stringify(lightUser));
+
         try {
           // Sync user profile to Firestore
           const userRef = doc(db, 'users', firebaseUser.uid);
@@ -57,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         setUser(firebaseUser);
       } else {
+        localStorage.removeItem('db995_user');
         setUser(null);
       }
       setLoading(false);
@@ -103,30 +139,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // 2. Mobile devices or PWA Standalone Mode
-    // signInWithRedirect is the industry standard and most robust method.
-    // Popups are highly unstable, frequently blocked, and do not persist session properly on mobile browsers or installed PWAs.
-    if (isMobile || isStandalone) {
-      console.log(`[PWA/Mobile] Directly triggering signInWithRedirect for ${providerType}...`);
+    // 2. Standalone PWA Mode
+    // For installed/standalone apps, popups don't behave nicely or establish cross-window state,
+    // so signInWithRedirect is the most suitable approach.
+    if (isStandalone) {
+      console.log('[PWA Standalone] Triggering signInWithRedirect...');
       try {
         await signInWithRedirect(auth, provider);
-      } catch (redirectError) {
-        console.error(`${providerType} Mobile Redirect Sign-in error:`, redirectError);
-        // Resilient fallback: try popup if redirect was somehow blocked or failed to load
+      } catch (redirectError: any) {
+        console.error(`${providerType} PWA Redirect Sign-in error:`, redirectError);
+        // Fallback to popup if redirect fails
         try {
           await signInWithPopup(auth, provider);
         } catch (popupError: any) {
-          console.error(`${providerType} Mobile Fallback Popup Sign-in error:`, popupError);
-          alert(`登入失敗，請確認是否允許彈出視窗後重試，或嘗試使用其他瀏覽器開啟網站。\n(錯誤: ${popupError.message || popupError})`);
+          console.error(`${providerType} PWA Fallback Popup Sign-in error:`, popupError);
+          alert(`登入失敗，請確認是否允許彈出視窗後重試：${popupError.message}`);
         }
       }
       return;
     }
 
-    // 3. Desktop browsers
-    // Prefer signInWithPopup first for optimal, non-reloading UX.
+    // 3. Normal Mobile & Desktop browsers
+    // Prefer signInWithPopup first! When triggered directly by clicking a button, mobile Safari/Chrome will open it as a popup.
+    // This allows credentials to be transferred directly via window.postMessage, and written directly into
+    // our first-party domain's IndexedDB. Thus, Safari's third-party ITP cookie restrictions are completely bypassed,
+    // and refreshing the page will keep the user logged in perfectly!
+    console.log(`[Browser] Triggering signInWithPopup for ${providerType}...`);
     try {
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      if (result.user) {
+        const lightUser = {
+          uid: result.user.uid,
+          displayName: result.user.displayName || '匿名用戶',
+          photoURL: result.user.photoURL,
+          email: result.user.email,
+        };
+        localStorage.setItem('db995_user', JSON.stringify(lightUser));
+        setUser(result.user);
+      }
     } catch (error: any) {
       console.warn(`${providerType} popup sign-in error:`, error);
       
@@ -141,32 +191,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // If popup fails or is blocked on desktop, fallback to redirect
-      console.log('Falling back to signInWithRedirect on desktop...');
+      // If popup is blocked or fails, fallback to redirect
+      console.log('Falling back to signInWithRedirect...');
       try {
         await signInWithRedirect(auth, provider);
       } catch (redirectError: any) {
-        console.error(`${providerType} Desktop Redirect Sign-in fallback error:`, redirectError);
-        if (errorCode === 'auth/popup-blocked' || errorCode === 'auth/web-storage-unsupported') {
-          alert(
-            providerType === 'facebook'
-              ? '由於您使用的瀏覽器限制（例如彈出視窗與第三方 Cookie 阻擋），Facebook 登入彈出視窗被封鎖了。請嘗試「允許此來源的彈出視窗」，或點選重新載入重導向。'
-              : '由於瀏覽器限制，登入彈出視窗被攔截了。請嘗試「允許此來源的彈出視窗」以完成登入。'
-          );
-        } else {
-          alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
-        }
+        console.error(`${providerType} Redirect fallback error:`, redirectError);
+        alert(`登入失敗，請確認是否允許彈出視窗與第三方 Cookie：${redirectError.message || redirectError}`);
       }
     }
   };
 
   const logout = async () => {
     try {
+      localStorage.removeItem('db995_user');
+      setUser(null);
       await signOut(auth);
     } catch (error) {
       console.error('Logout error:', error);
     }
   };
+
 
   return (
     <AuthContext.Provider value={{ user, loading, signIn, logout }}>

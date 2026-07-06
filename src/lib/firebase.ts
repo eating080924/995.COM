@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { 
   initializeFirestore, 
   persistentLocalCache, 
@@ -51,3 +51,9 @@ try {
 
 export const db = firestoreInstance;
 export const auth = getAuth(app);
+
+if (typeof window !== 'undefined') {
+  setPersistence(auth, browserLocalPersistence).catch((error) => {
+    console.warn('Failed to configure Firebase Auth persistence:', error);
+  });
+}
