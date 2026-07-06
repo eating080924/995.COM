@@ -9,9 +9,23 @@ async function startServer() {
   // Proxy Firebase Auth endpoints to bypass Safari/iOS Chrome third-party cookie restrictions (ITP)
   app.use(
     "/__/auth",
+    (req, res, next) => {
+      // Restore the /__/auth prefix because Express app.use("/__/auth") stripped it,
+      // but http-proxy-middleware needs the full path to forward correctly.
+      req.url = req.originalUrl;
+
+      // Strip headers that confuse Firebase Hosting routing
+      delete req.headers["x-forwarded-host"];
+      delete req.headers["x-forwarded-proto"];
+      delete req.headers["x-forwarded-for"];
+      delete req.headers["forwarded"];
+      delete req.headers["via"];
+      next();
+    },
     createProxyMiddleware({
       target: "https://com-515d4.firebaseapp.com",
       changeOrigin: true,
+      xfwd: false,
     })
   );
 
