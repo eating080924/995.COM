@@ -9,7 +9,16 @@ import {
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const app = initializeApp(firebaseConfig);
+const isBrowser = typeof window !== 'undefined';
+const isGithubPages = isBrowser && window.location.hostname.endsWith('github.io');
+const customAuthDomain = (isBrowser && !isGithubPages) ? window.location.host : firebaseConfig.authDomain;
+
+const config = {
+  ...firebaseConfig,
+  authDomain: customAuthDomain,
+};
+
+const app = initializeApp(config);
 
 const isDefaultDb = !firebaseConfig.firestoreDatabaseId || firebaseConfig.firestoreDatabaseId === '(default)';
 const databaseId = isDefaultDb ? undefined : firebaseConfig.firestoreDatabaseId;

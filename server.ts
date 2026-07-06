@@ -1,9 +1,19 @@
 import express from "express";
 import path from "path";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+
+  // Proxy Firebase Auth endpoints to bypass Safari/iOS Chrome third-party cookie restrictions (ITP)
+  app.use(
+    "/__/auth",
+    createProxyMiddleware({
+      target: "https://com-515d4.firebaseapp.com",
+      changeOrigin: true,
+    })
+  );
 
   // In production, serve build artifacts. Otherwise, plug in Vite middleware
   if (process.env.NODE_ENV !== "production") {
