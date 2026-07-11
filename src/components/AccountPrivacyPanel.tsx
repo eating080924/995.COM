@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { deleteAllUserAppData } from '../lib/userDeletion';
-import { Shield, ShieldAlert, FileText, CheckCircle, Trash2, Mail, Info, Loader2 } from 'lucide-react';
+import { Shield, ShieldAlert, FileText, CheckCircle, Trash2, Mail, Info, Loader2, Settings } from 'lucide-react';
 
 export function AccountPrivacyPanel() {
   const { user, logout } = useAuth();
@@ -9,6 +9,30 @@ export function AccountPrivacyPanel() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
   const [deletionStatus, setDeletionStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [enableCenterPopup, setEnableCenterPopup] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('db995_enable_center_popup');
+      return saved !== 'false';
+    }
+    return true;
+  });
+
+  React.useEffect(() => {
+    const handlePrefChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.enabled === 'boolean') {
+        setEnableCenterPopup(customEvent.detail.enabled);
+      }
+    };
+    window.addEventListener('db995-pref-changed', handlePrefChange);
+    return () => window.removeEventListener('db995-pref-changed', handlePrefChange);
+  }, []);
+
+  const handleToggleCenterPopup = (enabled: boolean) => {
+    setEnableCenterPopup(enabled);
+    localStorage.setItem('db995_enable_center_popup', String(enabled));
+    window.dispatchEvent(new CustomEvent('db995-pref-changed', { detail: { enabled } }));
+  };
 
   if (!user) return null;
 
@@ -140,6 +164,35 @@ export function AccountPrivacyPanel() {
             id="trigger-delete-account-btn"
           >
             永久刪除帳號與所有委託資料
+          </button>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-slate-100 mx-6 md:mx-8" />
+
+      {/* Preferences Section */}
+      <div className="p-6 md:p-8 space-y-4">
+        <h4 className="text-xs font-black text-slate-700 flex items-center gap-1.5 uppercase tracking-wider">
+          <Settings size={14} className="text-red-500 animate-spin-slow" />
+          <span>通知與偏好設定</span>
+        </h4>
+        <div className="bg-slate-50 rounded-2xl border border-slate-100 p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h5 className="text-xs font-black text-slate-800">新廣播螢幕中央即時提示</h5>
+            <p className="text-xs text-slate-500 leading-relaxed max-w-xl font-medium">
+              當有其他用戶發佈新的緊急廣播時，在螢幕中央顯示半透明高能彈出視窗（顯示 3 秒後自動關閉），以便第一時間取得關鍵資訊。
+            </p>
+          </div>
+          <button
+            onClick={() => handleToggleCenterPopup(!enableCenterPopup)}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black tracking-wider transition-all shadow-sm active:scale-95 shrink-0 border ${
+              enableCenterPopup
+                ? "bg-red-50 border-red-200 text-red-600 hover:bg-red-100"
+                : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
+            }`}
+          >
+            {enableCenterPopup ? "已開啟 (點擊關閉)" : "已關閉 (點擊開啟)"}
           </button>
         </div>
       </div>

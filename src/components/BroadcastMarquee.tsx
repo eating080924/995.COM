@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { Broadcast } from '../types';
 import { formatTimeAgo } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, ChevronLeft, ChevronRight, List, Link, ExternalLink, Clock } from 'lucide-react';
+import { Megaphone, ChevronLeft, ChevronRight, List, Link, ExternalLink, Clock, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export function BroadcastMarquee() {
@@ -14,6 +14,32 @@ export function BroadcastMarquee() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [screenCenterBroadcast, setScreenCenterBroadcast] = useState<Broadcast | null>(null);
   const [hasHoverSupport, setHasHoverSupport] = useState(false);
+  const [enableCenterPopup, setEnableCenterPopup] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('db995_enable_center_popup');
+      return saved !== 'false';
+    }
+    return true;
+  });
+
+  // Sync preference with other components (e.g. AccountPrivacyPanel)
+  useEffect(() => {
+    const handlePrefChange = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail && typeof customEvent.detail.enabled === 'boolean') {
+        setEnableCenterPopup(customEvent.detail.enabled);
+      }
+    };
+    window.addEventListener('db995-pref-changed', handlePrefChange);
+    return () => window.removeEventListener('db995-pref-changed', handlePrefChange);
+  }, []);
+
+  const handleToggleCenterPopup = (enabled: boolean) => {
+    setEnableCenterPopup(enabled);
+    localStorage.setItem('db995_enable_center_popup', String(enabled));
+    window.dispatchEvent(new CustomEvent('db995-pref-changed', { detail: { enabled } }));
+  };
+
   const DEFAULT_MESSAGE = "歡迎使用 995 委託板 —— 互助互惠，世界和平！";
 
   // Check hover support for SSR/hydration safety
@@ -84,15 +110,18 @@ export function BroadcastMarquee() {
 
     if (newBroadcast) {
       poppedUpIds.current.add(newBroadcast.id);
-      setScreenCenterBroadcast(newBroadcast);
       
-      const timer = setTimeout(() => {
-        setScreenCenterBroadcast(null);
-      }, 3000); // Display for 3 seconds
+      if (enableCenterPopup) {
+        setScreenCenterBroadcast(newBroadcast);
+        
+        const timer = setTimeout(() => {
+          setScreenCenterBroadcast(null);
+        }, 3000); // Display for 3 seconds
 
-      return () => clearTimeout(timer);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [broadcasts]);
+  }, [broadcasts, enableCenterPopup]);
 
   const currentItem = broadcasts.length > 0 ? broadcasts[activeIndex] : null;
 
@@ -266,12 +295,25 @@ export function BroadcastMarquee() {
             className="border-b border-slate-800 bg-slate-950 text-slate-300 overflow-hidden"
           >
             <div className="max-w-7xl mx-auto px-4 py-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
                 <span className="text-xs font-black tracking-widest text-slate-400 flex items-center gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                   當前活躍廣播清單 ({broadcasts.length})
                 </span>
-                <span className="text-[10px] text-slate-500 font-bold hidden sm:inline-block">點擊快速直達相關任務</span>
+                
+                {/* Real-time Center Popup Settings Switch for Marquee Header */}
+                <div className="flex items-center gap-2 text-[11px] text-slate-300 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl shrink-0">
+                  <input
+                    type="checkbox"
+                    id="toggle-center-popup-drawer"
+                    checked={enableCenterPopup}
+                    onChange={(e) => handleToggleCenterPopup(e.target.checked)}
+                    className="w-3.5 h-3.5 accent-red-500 rounded cursor-pointer"
+                  />
+                  <label htmlFor="toggle-center-popup-drawer" className="font-bold cursor-pointer select-none">
+                    啟用新廣播螢幕中央即時提示
+                  </label>
+                </div>
               </div>
               
               {broadcasts.length === 0 ? (
@@ -351,6 +393,15 @@ export function BroadcastMarquee() {
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
               className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-[0_20px_50px_rgba(239,68,68,0.35)] border border-red-500/30 overflow-hidden pointer-events-auto"
             >
+              {/* Close Button "X" */}
+              <button 
+                onClick={() => setScreenCenterBroadcast(null)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-white hover:bg-white/15 p-1.5 rounded-full transition-all active:scale-90"
+                title="關閉提示"
+              >
+                <X size={15} />
+              </button>
+
               {/* Animated ambient pulse backgrounds */}
               <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-600/10 rounded-full blur-3xl animate-pulse" />
               <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
@@ -375,11 +426,25 @@ export function BroadcastMarquee() {
                   「 {screenCenterBroadcast.content} 」
                 </p>
 
-                {/* Publisher Details */}
-                <div className="flex items-center gap-2 text-slate-400 text-xs justify-center">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping" />
-                  <span>廣播發佈者：</span>
-                  <span className="font-bold text-slate-200">{screenCenterBroadcast.userName || '匿名'}</span>
+                {/* Publisher Details & Action */}
+                <div className="flex flex-col items-center gap-2 text-slate-400 text-xs justify-center w-full">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping" />
+                    <span>廣播發佈者：</span>
+                    <span className="font-bold text-slate-200">{screenCenterBroadcast.userName || '匿名'}</span>
+                  </div>
+                  
+                  {/* Option to quickly disable future popups */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleCenterPopup(false);
+                      setScreenCenterBroadcast(null);
+                    }}
+                    className="text-[10px] text-slate-500 hover:text-red-400 transition-colors font-bold underline cursor-pointer mt-1"
+                  >
+                    不再顯示此中央提示（可於選單重新開啟）
+                  </button>
                 </div>
               </div>
             </motion.div>
