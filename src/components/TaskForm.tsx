@@ -35,7 +35,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
     }
   }, [user, onClose]);
 
-  // Check if user already has an active task (status in ['open', 'accepted'])
+  // Check if user already has an active task limit reached (status in ['open', 'accepted'])
   React.useEffect(() => {
     if (!taskToEdit && user) {
       if (isUserUnlimited(user.uid, user.email)) {
@@ -51,7 +51,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       );
       getDocs(q)
         .then((snapshot) => {
-          setHasActiveTask(!snapshot.empty);
+          setHasActiveTask(snapshot.size >= 3);
           setCheckingActiveTask(false);
         })
         .catch((error) => {
@@ -121,8 +121,8 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
             where('status', 'in', ['open', 'accepted'])
           );
           const activeTasksSnapshot = await getDocs(q);
-          if (!activeTasksSnapshot.empty) {
-            setSubmitError('您目前已有進行中或開放中的委託任務，無法發布新任務。');
+          if (activeTasksSnapshot.size >= 3) {
+            setSubmitError('您目前已有 3 筆進行中或開放中的委託任務，已達發布上限。');
             setHasActiveTask(true);
             return;
           }
@@ -181,12 +181,12 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           </div>
           <div className="p-6 text-center space-y-4">
             <p className="text-sm text-slate-600 leading-relaxed">
-              為了維護任務市集品質，每個帳號每次<b>限發布一筆委託任務</b>。
+              為了維護任務市集品質，每個帳號最多同時<b>發布 3 筆活躍中的委託任務</b>。
             </p>
             <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-left text-xs text-amber-800 space-y-1.5 font-medium leading-relaxed">
               <p className="font-bold text-amber-900 block">💡 提示與說明：</p>
-              <p>您目前已有正在進行（進行中）或等待承接（開放中）的委託任務。</p>
-              <p className="font-bold text-slate-800 pt-1 border-t border-amber-100/50">請先前往「個人委託」專區，將現有委託進行「完成結案」或「取消任務」後，才能建立新委託。</p>
+              <p>您目前已有 3 筆正在進行（進行中）或等待承接（開放中）的委託任務，已達上限。</p>
+              <p className="font-bold text-slate-800 pt-1 border-t border-amber-100/50">請先前往「個人委託」專區，將現有任務進行「完成結案」或「取消任務」以釋出額度後，才能建立新委託。</p>
             </div>
             <button
               onClick={onClose}

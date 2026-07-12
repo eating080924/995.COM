@@ -287,7 +287,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
               })}
               disabled={isButtonDisabled}
               className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all disabled:bg-slate-50 disabled:text-slate-400 placeholder:text-slate-300 text-sm font-semibold"
-              placeholder={isButtonDisabled ? "目前無法發布..." : "例如：急尋幫忙遛狗！委託單號:xxxxxxxxxxxx"}
+              placeholder={isButtonDisabled ? "目前無法發布..." : "例如：急尋幫忙遛狗！"}
             />
             {errors.content && <p className="text-red-500 text-xs mt-1.5 font-bold flex items-center gap-1">⚠️ {errors.content.message}</p>}
           </div>
