@@ -39,16 +39,33 @@ export async function performTaskCleanup(userId: string | undefined) {
       openTasksSnapshot.docs
         .filter(taskDoc => {
           const data = taskDoc.data();
-          if (!data.createdAt) return false;
-          const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-          return createdAt < threeDaysAnHourAgo;
+          const currentDate = new Date();
+          
+          // Condition 1: Created older than 3 days
+          let isOlderThan3Days = false;
+          if (data.createdAt) {
+            const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+            isOlderThan3Days = createdAt < threeDaysAnHourAgo;
+          }
+          
+          // Condition 2: deadlineEnd has passed
+          let isDeadlinePassed = false;
+          if (data.deadlineEnd) {
+            const deadlineEnd = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
+            isDeadlinePassed = deadlineEnd < currentDate;
+          }
+          
+          return isOlderThan3Days || isDeadlinePassed;
         })
         .map(async (taskDoc) => {
           try {
-            await deleteDoc(taskDoc.ref);
+            await updateDoc(taskDoc.ref, {
+              status: 'timeout',
+              updatedAt: serverTimestamp()
+            });
             return { success: true };
           } catch (e) {
-            console.warn(`Failed to auto-delete task ${taskDoc.id}:`, e);
+            console.warn(`Failed to auto-expire task ${taskDoc.id}:`, e);
             return { success: false };
           }
         })
@@ -56,7 +73,7 @@ export async function performTaskCleanup(userId: string | undefined) {
     
     const deletedCount = deleteResults.filter(r => r.success).length;
     if (deletedCount > 0) {
-      console.log(`Auto-cleaned ${deletedCount} expired open tasks from the system.`);
+      console.log(`Auto-cleaned ${deletedCount} expired/overdue open tasks by setting status to 'timeout'.`);
     }
 
     // 2. Auto-complete "Accepted" tasks that reached deadlineEnd

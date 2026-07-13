@@ -244,10 +244,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       onConfirm: async () => {
         try {
           const taskRef = doc(db, 'tasks', task.id);
-          await deleteDoc(taskRef);
+          await updateDoc(taskRef, {
+            status: 'delete',
+            updatedAt: serverTimestamp()
+          });
         } catch (error: any) {
           try {
-            handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
+            handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
           } catch (e) {
             console.error('Firestore operation failed:', e);
           }
@@ -275,10 +278,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       onConfirm: async () => {
         try {
           const taskRef = doc(db, 'tasks', task.id);
-          await deleteDoc(taskRef);
+          await updateDoc(taskRef, {
+            status: 'delete',
+            updatedAt: serverTimestamp()
+          });
         } catch (error: any) {
           try {
-            handleFirestoreError(error, OperationType.DELETE, `tasks/${task.id}`);
+            handleFirestoreError(error, OperationType.UPDATE, `tasks/${task.id}`);
           } catch (e) {
             console.error('Firestore operation failed:', e);
           }

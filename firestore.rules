@@ -67,7 +67,7 @@ service cloud.firestore {
                (data.deadlineEnd is timestamp || data.deadlineEnd is string) &&
                data.requesterId == request.auth.uid &&
                data.requesterName is string &&
-               data.status in ['open', 'accepted', 'completed'];
+               data.status in ['open', 'accepted', 'completed', 'delete', 'timeout'];
       }
 
       allow list: if true;
@@ -104,6 +104,17 @@ service cloud.firestore {
           isOwner(resource.data.requesterId) &&
           resource.data.status == 'open' &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'reward', 'location', 'contact', 'deadlineStart', 'deadlineEnd', 'updatedAt'])
+        ) ||
+        // Action: Delete/Cancel/Expire Task (by owner, admin, or public cleanup)
+        (
+          (request.resource.data.status == 'delete' || request.resource.data.status == 'timeout') &&
+          (
+            isOwner(resource.data.requesterId) ||
+            isAdmin() ||
+            (resource.data.status == 'open' && isExpired(resource.data.createdAt, 259200)) ||
+            (resource.data.status == 'open' && isExpired(resource.data.deadlineEnd, 0))
+          ) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
         )
       );
 

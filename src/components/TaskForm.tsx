@@ -103,6 +103,14 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
     try {
       setSubmitError(null);
+      
+      const startDate = new Date(data.deadlineStart);
+      const endDate = new Date(data.deadlineEnd);
+      if (endDate < startDate) {
+        setSubmitError('預計結束時間不能早於任務開始時間。');
+        return;
+      }
+
       if (taskToEdit) {
         const taskRef = doc(db, 'tasks', taskToEdit.id);
         await updateDoc(taskRef, {
