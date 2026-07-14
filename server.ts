@@ -29,6 +29,12 @@ async function startServer() {
     })
   );
 
+  // Explicit route for ads.txt to guarantee AdSense crawler reliability and bypass cold start static resolution quirks
+  app.get("/ads.txt", (req, res) => {
+    res.set("Content-Type", "text/plain");
+    res.send("google.com, pub-6474295952980654, DIRECT, f08c47fec0942fa0\n");
+  });
+
   // In production, serve build artifacts. Otherwise, plug in Vite middleware
   if (process.env.NODE_ENV !== "production") {
     // Dynamically import Vite to avoid loading it in production (where it might trigger ERR_REQUIRE_ESM)
