@@ -274,7 +274,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
               {isUnlimited 
                 ? "您的帳號已啟用免限制特權，發送廣播無冷卻時間且無次數上限。" 
-                : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每小時限額 10 則。"}
+                : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每 4 小時限額 10 則。"}
             </p>
           </div>
 
