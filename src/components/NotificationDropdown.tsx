@@ -11,6 +11,68 @@ import {
 import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/\-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+async function subscribeUserToPush(userId: string) {
+  try {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      console.warn('Push messaging is not supported in this browser.');
+      return;
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    
+    // 1. Fetch public VAPID key from backend
+    const keyRes = await fetch('/api/vapid-public-key');
+    if (!keyRes.ok) throw new Error('Failed to fetch VAPID public key');
+    const { publicKey } = await keyRes.json();
+
+    if (!publicKey) {
+      console.warn('VAPID public key is empty on the server.');
+      return;
+    }
+
+    const convertedVapidKey = urlBase64ToUint8Array(publicKey);
+
+    // 2. Subscribe to Push Manager
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: convertedVapidKey
+    });
+
+    // 3. Send subscription to backend
+    const subRes = await fetch('/api/subscribe-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        subscription
+      })
+    });
+
+    if (subRes.ok) {
+      console.log('Successfully subscribed user to background push notifications!');
+    } else {
+      console.error('Failed to register subscription with server:', await subRes.text());
+    }
+  } catch (error) {
+    console.error('Error subscribing to push notifications:', error);
+  }
+}
+
 export function NotificationDropdown() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -34,6 +96,13 @@ export function NotificationDropdown() {
         });
     }
   }, []);
+
+  // Automatically subscribe to background push notifications when user is logged in and permission is granted
+  useEffect(() => {
+    if (user && desktopPermission === 'granted') {
+      subscribeUserToPush(user.uid);
+    }
+  }, [user, desktopPermission]);
 
   // Subscribe to real-time notifications
   useEffect(() => {
@@ -138,6 +207,9 @@ export function NotificationDropdown() {
     try {
       const permission = await Notification.requestPermission();
       setDesktopPermission(permission);
+      if (permission === 'granted' && user) {
+        subscribeUserToPush(user.uid);
+      }
     } catch (error) {
       console.error('Error requesting notification permission:', error);
     }

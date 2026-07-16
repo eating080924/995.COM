@@ -58,6 +58,19 @@ export async function sendNotification(params: {
       read: false,
       createdAt: serverTimestamp(),
     });
+
+    // Also trigger background Web Push notification via backend API proxy
+    try {
+      fetch('/api/send-push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      }).catch((err) => console.warn('Background Web Push call failed:', err));
+    } catch (pushErr) {
+      console.warn('Background Web Push error:', pushErr);
+    }
   } catch (error) {
     console.error('Failed to send notification:', error);
   }
