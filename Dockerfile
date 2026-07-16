@@ -26,8 +26,9 @@ ENV PORT=8080
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-# 從編譯階段複製打包好的 dist 目錄到運行容器中
+# 從編譯階段複製打包好的 dist 目錄與設定檔到運行容器中
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/firebase-applet-config.json ./
 
 # 宣告對外 Port（Cloud Run 容器預設監聽 8080）
 EXPOSE 8080

@@ -7,18 +7,31 @@ import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import webpush from "web-push";
 
 // Load Firebase configuration safely
-const firebaseConfig = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf8")
-);
+let firebaseConfig: any = null;
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  } else {
+    console.warn("firebase-applet-config.json not found at", configPath);
+  }
+} catch (err) {
+  console.error("Failed to parse firebase-applet-config.json:", err);
+}
 
 let db: any = null;
 let vapidKeys = { publicKey: "", privateKey: "" };
 let localSubscriptionsFallback: Array<{ userId: string; subscription: any }> = [];
 
 try {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
+  if (firebaseConfig && firebaseConfig.projectId) {
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+  } else {
+    // Fallback: Cloud Run environments provide Application Default Credentials and project environment context
+    admin.initializeApp();
+  }
   db = getFirestore("db995com");
   console.log("Firebase Admin initialized successfully with database db995com.");
 } catch (error) {
