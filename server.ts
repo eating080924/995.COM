@@ -128,9 +128,7 @@ async function startServer() {
       return res.status(400).json({ error: "Missing userId or subscription details" });
     }
 
-    if (!db) {
-      // Resilient fallback to local in-memory storage if Firebase Admin lacks credentials in local dev
-      // Remove any duplicate endpoints for this user first
+    const saveToMemoryFallback = () => {
       localSubscriptionsFallback = localSubscriptionsFallback.filter(
         (s) => !(s.userId === userId && s.subscription.endpoint === subscription.endpoint)
       );
@@ -138,6 +136,10 @@ async function startServer() {
       if (localSubscriptionsFallback.length > 200) {
         localSubscriptionsFallback.shift(); // Prevent memory unbounded growth
       }
+    };
+
+    if (!db) {
+      saveToMemoryFallback();
       return res.status(200).json({ success: true, message: "Subscription registered in fallback memory cache" });
     }
 
@@ -154,6 +156,12 @@ async function startServer() {
 
       res.status(200).json({ success: true });
     } catch (error: any) {
+      if (error && (error.code === 7 || (error.message && error.message.includes("PERMISSION_DENIED")))) {
+        console.warn("Firestore Admin lacks IAM permissions for db995com. Falling back to in-memory storage for push subscription:", error);
+        saveToMemoryFallback();
+        return res.status(200).json({ success: true, message: "Registered subscription in in-memory fallback cache due to Firestore permissions" });
+      }
+
       console.error("Error saving push subscription:", error);
       res.status(500).json({ error: error.message });
     }
@@ -167,21 +175,37 @@ async function startServer() {
 
     try {
       let subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
+      let usedFallback = false;
 
       if (db) {
-        const subsSnap = await db
-          .collection("push_subscriptions")
-          .where("userId", "==", userId)
-          .get();
+        try {
+          const subsSnap = await db
+            .collection("push_subscriptions")
+            .where("userId", "==", userId)
+            .get();
 
-        subscriptions = subsSnap.docs.map((doc) => ({
-          id: doc.id,
-          subscription: doc.data().subscription,
-          delete: async () => {
-            await doc.ref.delete();
-          },
-        }));
-      } else {
+          subscriptions = subsSnap.docs.map((doc: any) => ({
+            id: doc.id,
+            subscription: doc.data().subscription,
+            delete: async () => {
+              try {
+                await doc.ref.delete();
+              } catch (delErr) {
+                console.warn(`Could not delete stale subscription from Firestore:`, delErr);
+              }
+            },
+          }));
+        } catch (firestoreError: any) {
+          if (firestoreError && (firestoreError.code === 7 || (firestoreError.message && firestoreError.message.includes("PERMISSION_DENIED")))) {
+            console.warn("Firestore Admin lacks IAM permissions for db995com. Falling back to in-memory storage to find push subscriptions:", firestoreError);
+            usedFallback = true;
+          } else {
+            throw firestoreError;
+          }
+        }
+      }
+
+      if (!db || usedFallback) {
         // Retrieve from in-memory fallback list
         subscriptions = localSubscriptionsFallback
           .filter((s) => s.userId === userId)
