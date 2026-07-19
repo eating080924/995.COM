@@ -54,7 +54,7 @@ export function CommunityLinks() {
                 <h4 className="text-[11px] font-bold text-slate-800 group-hover:text-amber-700 transition-colors">
                   尼口尼口 NicoNico 寵物精緻美容&旅館
                 </h4>
-                <p className="text-[9px] text-slate-400 font-medium">寵物美容、住宿與精緻沙龍 - 台中</p>
+                <p className="text-[9px] text-slate-400 font-medium">寵物美容、住宿與精緻沙龍 - 台中北屯</p>
               </div>
             </div>
             <Facebook size={14} className="text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
