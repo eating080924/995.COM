@@ -138,40 +138,6 @@ export function NotificationDropdown() {
           setTimeout(() => {
             setShowToast(current => current?.id === latestNew.id ? null : current);
           }, 5000);
-
-          // Trigger Native Browser Notification (highly optimized for mobile via Service Worker)
-          if (Notification.permission === 'granted') {
-            const title = 
-              latestNew.type === 'task_accepted' ? '任務已被承接 🚀' :
-              latestNew.type === 'task_unaccepted' ? '承接人取消承接 ⚠️' : '任務已完成結案 🎉';
-            
-            const body = `任務 [${latestNew.taskNum}] ${latestNew.taskContent.slice(0, 30)}... \n異動者: ${latestNew.senderName}`;
-            
-            // Try Service Worker first for background notification (essential for mobile)
-            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title,
-                options: {
-                  body,
-                  tag: latestNew.id,
-                  icon: '/icon-192.png',
-                  badge: '/icon-192.png',
-                }
-              });
-            } else {
-              // Fallback to standard document notification
-              try {
-                new Notification(title, {
-                  body,
-                  icon: '/icon-192.png',
-                  tag: latestNew.id,
-                });
-              } catch (e) {
-                console.warn('Failed to display native notification:', e);
-              }
-            }
-          }
         }
       }
 
