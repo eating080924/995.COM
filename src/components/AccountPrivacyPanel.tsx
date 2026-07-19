@@ -447,10 +447,10 @@ export function AccountPrivacyPanel() {
         <div className="md:col-span-7 space-y-1.5">
           <h3 className="text-sm font-black text-red-800 uppercase flex items-center gap-1.5">
             <Trash2 size={14} className="text-red-500" />
-            <span>個人數據自主刪除 (被遺忘權)</span>
+            <span>個人數據自主刪除</span>
           </h3>
           <p className="text-xs text-slate-500 leading-relaxed">
-            若您不再使用委託板，我們提供極為徹底的一鍵數據銷毀。點擊後系統會<b>永久、不可逆</b>地抹除您的個人檔案、發布的所有任務以及廣播、評價歷史。
+            若您不再使用委託板，我們提供極為徹底的一鍵數據銷毀。點擊後系統會<b>永久、不可逆</b>地抹除您的個人檔案、發布的所有任務以及廣播紀錄。
           </p>
         </div>
         <div className="md:col-span-5 flex justify-end">
