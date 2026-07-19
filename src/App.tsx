@@ -17,7 +17,6 @@ import { LoginModal } from './components/LoginModal';
 import { isInAppBrowser } from './lib/detector';
 import { AccountPrivacyPanel } from './components/AccountPrivacyPanel';
 import { CommunityLinks } from './components/CommunityLinks';
-import { AboutAndFaq } from './components/AboutAndFaq';
 import { TASK_CATEGORIES, TAIWAN_REGIONS } from './config/achievements';
 
 
@@ -27,7 +26,7 @@ function AppContent() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBroadcastForm, setShowBroadcastForm] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'privacy' | 'guide'>('all');
+  const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'privacy'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
@@ -155,12 +154,6 @@ function AppContent() {
               >
                 進行中
               </button>
-              <button 
-                onClick={() => setActiveTab('guide')}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'guide' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
-              >
-                平台指南與 FAQ
-              </button>
               {user && (
                 <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
                   <button 
@@ -219,9 +212,7 @@ function AppContent() {
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">
                 {activeTab === 'privacy' 
                   ? '個人隱私與帳戶管理' 
-                  : (activeTab === 'guide' 
-                      ? '平台互助指南與常見問題 FAQ' 
-                      : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務'))}
+                  : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務')}
               </h2>
               {(activeTab === 'all' || activeTab === 'open' || activeTab === 'accepted') && (
                 <div className="mt-4 flex flex-col sm:flex-row gap-3 max-w-2xl">
@@ -289,22 +280,13 @@ function AppContent() {
 
           {activeTab === 'privacy' ? (
             <AccountPrivacyPanel />
-          ) : activeTab === 'guide' ? (
-            <AboutAndFaq />
           ) : (
-            <>
-              <TaskList 
-                filter={activeTab} 
-                searchQuery={searchQuery} 
-                categoryFilter={categoryFilter}
-                regionFilter={regionFilter}
-              />
-              {activeTab === 'all' && (
-                <div className="border-t border-slate-200/60 pt-6">
-                  <AboutAndFaq />
-                </div>
-              )}
-            </>
+            <TaskList 
+              filter={activeTab} 
+              searchQuery={searchQuery} 
+              categoryFilter={categoryFilter}
+              regionFilter={regionFilter}
+            />
           )}
 
           {/* Also show on mobile/tablet screens at the bottom of the tasks list for easy access */}
@@ -316,8 +298,8 @@ function AppContent() {
 
       {/* PWA style Bottom Nav for mobile */}
       <nav className="md:hidden bg-white border-t border-slate-200 flex justify-around items-center h-20 sticky bottom-0 z-40 px-2 pb-safe">
-        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy' && activeTab !== 'guide') ? 'text-red-500' : 'text-slate-400'}`}>
-          <Sparkles size={22} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy' && activeTab !== 'guide') ? 'currentColor' : 'none'} />
+        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-red-500' : 'text-slate-400'}`}>
+          <Sparkles size={22} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} />
           <span className="text-[10px] font-bold">主頁</span>
         </button>
         <div className="flex flex-col items-center gap-1 group relative">
