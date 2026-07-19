@@ -52,10 +52,10 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   },
   {
     id: 'five_star_superman',
-    title: '五星神級好評',
-    description: '服務品質極高，零負評。',
-    conditionDescription: '獲得 5 星好評且評價次數達 3 次以上',
-    checkFn: (stats) => stats.averageRating >= 4.9 && stats.ratingCount >= 3,
+    title: '神級熱心超人',
+    description: '熱忱奉獻，深受鄰里信賴的超級幫手。',
+    conditionDescription: '成功承接並完成 20 次委託任務',
+    checkFn: (stats) => stats.completedAsAcceptor >= 20,
   },
   {
     id: 'loudspeaker',
@@ -68,8 +68,8 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
     id: 'silent_guardian',
     title: '默默守護的黑夜騎士',
     description: '總是低調完成各項艱難託付。',
-    conditionDescription: '成功承接並完成 10 次委託任務，且平均評分達 4.5 以上',
-    checkFn: (stats) => stats.completedAsAcceptor >= 10 && stats.averageRating >= 4.5,
+    conditionDescription: '成功承接並完成 10 次委託任務，且發送緊急廣播 2 次以上',
+    checkFn: (stats) => stats.completedAsAcceptor >= 10 && stats.broadcastCount >= 2,
   }
 ];
 

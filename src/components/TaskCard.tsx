@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Task } from '../types';
 import { cn, formatTimeAgo } from '../lib/utils';
-import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash, Star, Award, MessageSquare, Loader2 } from 'lucide-react';
+import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash, Award, MessageSquare, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
@@ -38,8 +38,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [loadingExperts, setLoadingExperts] = useState(false);
   const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
 
-  // Acceptor profile state for displaying rating and title
-  const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string; averageRating?: number; ratingCount?: number } | null>(null);
+  // Acceptor profile state for displaying active title
+  const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
 
   useEffect(() => {
     if (!task.acceptorId) {
@@ -54,8 +54,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           const uData = uSnap.data();
           setAcceptorProfile({
             activeTitle: uData.activeTitle || '',
-            averageRating: uData.averageRating !== undefined ? uData.averageRating : 5.0,
-            ratingCount: uData.ratingCount || 0,
           });
         }
       } catch (err) {
@@ -542,10 +540,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       無稱號
                     </span>
                   )}
-                  <span className="text-[10px] text-amber-500 font-bold flex items-center gap-0.5 shrink-0">
-                    ★ {acceptorProfile?.averageRating !== undefined ? acceptorProfile.averageRating : '5.0'}
-                    <span className="text-slate-400 font-medium">({acceptorProfile?.ratingCount || 0}次評價)</span>
-                  </span>
                 </div>
               </div>
             </div>
@@ -661,101 +655,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             )}
           </div>
 
-          {/* Bidirectional Rating Section */}
-          {task.status === 'completed' && user && !ratingSuccess && (
-            (() => {
-              const showRequesterRating = isOwner && !task.requesterRated;
-              const showAcceptorRating = isAcceptor && !task.acceptorRated;
 
-              if (!showRequesterRating && !showAcceptorRating) return null;
-
-              const targetId = showRequesterRating ? task.acceptorId : task.requesterId;
-              const targetName = showRequesterRating ? (task.acceptorName || '承接人') : (task.requesterName || '委託人');
-              const targetRole = showRequesterRating ? 'acceptor' : 'requester';
-
-              if (!targetId) return null;
-
-              const handleSubmitLocalRating = async () => {
-                setIsSubmittingRating(true);
-                try {
-                  await submitRating({
-                    taskId: task.id,
-                    taskNum: task.taskNum || '',
-                    raterId: user.uid,
-                    raterName: user.displayName || user.email || '平台用戶',
-                    targetId: targetId,
-                    targetName: targetName,
-                    targetRole: targetRole as 'requester' | 'acceptor',
-                    rating: ratingValue,
-                    comment: ratingComment
-                  });
-                  setRatingSuccess(true);
-                } catch (err) {
-                  console.error('Error submitting rating:', err);
-                } finally {
-                  setIsSubmittingRating(false);
-                }
-              };
-
-              return (
-                <div className="mt-4 p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-3 animate-fade-in">
-                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                    <Star size={13} className="text-amber-500 fill-amber-500" />
-                    <span>給予「{targetName}」雙向評價</span>
-                  </h4>
-                  
-                  {/* Stars Selector */}
-                  <div className="flex gap-1.5 items-center">
-                    {[1, 2, 3, 4, 5].map((star) => (
-                      <button
-                        key={star}
-                        type="button"
-                        onClick={() => setRatingValue(star)}
-                        className="text-2xl focus:outline-none transition-transform hover:scale-125"
-                      >
-                        <span className={cn(
-                          "transition-colors",
-                          star <= ratingValue ? "text-amber-400" : "text-slate-300"
-                        )}>
-                          ★
-                        </span>
-                      </button>
-                    ))}
-                    <span className="text-xs font-bold text-slate-500 ml-2">
-                      {ratingValue} 顆星 ({
-                        ratingValue === 5 ? '極佳' :
-                        ratingValue === 4 ? '良好' :
-                        ratingValue === 3 ? '普通' :
-                        ratingValue === 2 ? '待加強' : '非常不滿'
-                      })
-                    </span>
-                  </div>
-
-                  {/* Comment Input */}
-                  <textarea
-                    placeholder="寫點感謝的話或回饋吧 (選填)..."
-                    value={ratingComment}
-                    onChange={(e) => setRatingComment(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none bg-white min-h-[60px]"
-                  />
-
-                  <button
-                    onClick={handleSubmitLocalRating}
-                    disabled={isSubmittingRating}
-                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-400 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
-                  >
-                    {isSubmittingRating ? '提交中...' : '送出評價'}
-                  </button>
-                </div>
-              );
-            })()
-          )}
-
-          {ratingSuccess && (
-            <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-xl text-center text-xs font-bold text-green-700">
-              雙向評價成功！評價已發布。
-            </div>
-          )}
 
           {/* Smart Match Experts Recommended Section */}
           {isOwner && (task.status === 'open' || task.status === 'accepted') && (
@@ -793,8 +693,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                             )}
                           </div>
                           <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
-                            <span className="text-amber-500">★ {exp.rating} ({exp.ratingCount})</span>
-                            <span>•</span>
                             <span>結案: {exp.count}次</span>
                           </div>
                         </div>

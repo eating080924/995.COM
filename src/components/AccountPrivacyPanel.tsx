@@ -80,28 +80,8 @@ export function AccountPrivacyPanel() {
           setSelectedCategories(data?.preferredCategories || []);
           setSelectedRegions(data?.preferredRegions || []);
           setActiveTitle(data?.activeTitle || '');
-
-          // Fetch reviews
-          const reviewsQ = query(
-            collection(db, 'ratings'),
-            where('targetId', '==', user.uid)
-          );
-          const reviewsSnap = await getDocs(reviewsQ);
-          const reviewsList: any[] = [];
-          reviewsSnap.forEach((d) => {
-            reviewsList.push({ id: d.id, ...d.data() });
-          });
-
-          // Sort reviews by creation time
-          reviewsList.sort((a, b) => {
-            const t1 = a.createdAt?.toDate ? a.createdAt.toDate() : (a.createdAt ? new Date(a.createdAt) : new Date(0));
-            const t2 = b.createdAt?.toDate ? b.createdAt.toDate() : (b.createdAt ? new Date(b.createdAt) : new Date(0));
-            return t2.getTime() - t1.getTime();
-          });
-
-          setReviews(reviewsList);
         } catch (err) {
-          console.error('Error fetching profile and reviews:', err);
+          console.error('Error fetching profile:', err);
         } finally {
           setLoadingProfile(false);
         }
@@ -263,7 +243,7 @@ export function AccountPrivacyPanel() {
               )}
 
               {/* Stats Counters */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 max-w-xl">
+              <div className="grid grid-cols-2 gap-3 pt-3 max-w-sm">
                 <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center sm:text-left">
                   <span className="text-[10px] font-black text-slate-400 block">作為接案者完成</span>
                   <span className="text-lg font-extrabold text-slate-800 font-mono">{stats.completedAsAcceptor} <span className="text-xs text-slate-500">次</span></span>
@@ -271,17 +251,6 @@ export function AccountPrivacyPanel() {
                 <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center sm:text-left">
                   <span className="text-[10px] font-black text-slate-400 block">作為委託者完成</span>
                   <span className="text-lg font-extrabold text-slate-800 font-mono">{stats.completedAsRequester} <span className="text-xs text-slate-500">次</span></span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center sm:text-left">
-                  <span className="text-[10px] font-black text-slate-400 block">平均互助評分</span>
-                  <span className="text-lg font-extrabold text-red-500 font-mono flex items-center justify-center sm:justify-start gap-1">
-                    <Star size={14} className="fill-red-500 text-red-500" />
-                    <span>{stats.ratingCount > 0 ? stats.averageRating : '無'}</span>
-                  </span>
-                </div>
-                <div className="bg-slate-50 border border-slate-100 p-2.5 rounded-xl text-center sm:text-left">
-                  <span className="text-[10px] font-black text-slate-400 block">收到評分次數</span>
-                  <span className="text-lg font-extrabold text-slate-800 font-mono">{stats.ratingCount} <span className="text-xs text-slate-500">次</span></span>
                 </div>
               </div>
             </div>
@@ -471,55 +440,6 @@ export function AccountPrivacyPanel() {
             )}
           </button>
         </div>
-      </div>
-
-      {/* 4. Feedback / Review list (查看收到的評價) */}
-      <div className="bg-white rounded-3xl border border-slate-200 shadow-md p-6 md:p-8 space-y-6">
-        <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-          <MessageSquare size={20} className="text-red-500" />
-          <h3 className="font-black text-slate-800 text-sm">💬 收到的評價與留言 (互助回饋)</h3>
-        </div>
-
-        {reviews.length > 0 ? (
-          <div className="space-y-4">
-            {reviews.map((rev) => {
-              const stars = Array.from({ length: 5 }, (_, i) => i < rev.rating);
-              const date = rev.createdAt?.toDate ? rev.createdAt.toDate().toLocaleString('zh-TW') : (rev.createdAt ? new Date(rev.createdAt).toLocaleString('zh-TW') : '未知時間');
-              return (
-                <div key={rev.id} className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-black text-slate-700">{rev.raterName || '匿名超人'}</span>
-                      <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${
-                        rev.targetRole === 'requester' ? 'bg-amber-150 text-amber-800' : 'bg-red-100 text-red-600'
-                      }`}>
-                        {rev.targetRole === 'requester' ? '評價案主' : '評價超人'}
-                      </span>
-                      <div className="flex items-center text-amber-500">
-                        {stars.map((filled, idx) => (
-                          <Star key={idx} size={11} className={filled ? "fill-amber-500" : "text-slate-300"} />
-                        ))}
-                      </div>
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-mono">{date}</span>
-                  </div>
-                  {rev.comment && (
-                    <p className="text-xs text-slate-600 bg-white/70 border border-slate-100/50 p-2.5 rounded-xl leading-relaxed">
-                      {rev.comment}
-                    </p>
-                  )}
-                  <p className="text-[9px] text-slate-400 font-medium">關聯委託單號：{rev.taskNum}</p>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="bg-slate-50/50 p-6 rounded-2xl text-center border border-dashed border-slate-200">
-            <p className="text-xs text-slate-400 font-medium leading-relaxed">
-              目前暫無收到評價。快去完成您的第一單互助任務，期待對方給您寫下暖心的好評吧！
-            </p>
-          </div>
-        )}
       </div>
 
       {/* 5. Irreversible account delete (Preserving original deletion code) */}
