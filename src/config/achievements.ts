@@ -44,18 +44,18 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
     checkFn: (stats) => stats.completedAsAcceptor >= 45,
   },
   {
-    id: 'generous_boss',
-    title: '活躍的委託者',
-    description: '樂於為社區帶來工作機會。',
-    conditionDescription: '發布並順利完成 3 次委託任務',
-    checkFn: (stats) => stats.completedAsRequester >= 3,
+    id: 'third_hero',
+    title: '胸前印著Ｓ的超級好人',
+    description: '擁有拯救世界的實力，但只想做個普通的好人。',
+    conditionDescription: '成功承接並完成 100 次委託任務',
+    checkFn: (stats) => stats.completedAsAcceptor >= 100,
   },
   {
-    id: 'five_star_superman',
-    title: '神級熱心超人',
-    description: '熱忱奉獻，深受鄰里信賴的超級幫手。',
-    conditionDescription: '成功承接並完成 20 次委託任務',
-    checkFn: (stats) => stats.completedAsAcceptor >= 20,
+    id: 'generous_boss',
+    title: '活躍的委託者',
+    description: '樂於為社區帶來委託任務機會。',
+    conditionDescription: '發布並順利完成 3 次委託任務',
+    checkFn: (stats) => stats.completedAsRequester >= 3,
   },
   {
     id: 'loudspeaker',
@@ -63,13 +63,6 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
     description: '善用廣播宣傳，活絡社區氣氛。',
     conditionDescription: '發送緊急廣播達 3 次以上',
     checkFn: (stats) => stats.broadcastCount >= 3,
-  },
-  {
-    id: 'silent_guardian',
-    title: '默默守護的黑夜騎士',
-    description: '總是低調完成各項艱難託付。',
-    conditionDescription: '成功承接並完成 10 次委託任務，且發送緊急廣播 2 次以上',
-    checkFn: (stats) => stats.completedAsAcceptor >= 10 && stats.broadcastCount >= 2,
   }
 ];
 
