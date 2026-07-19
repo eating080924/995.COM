@@ -689,7 +689,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                     disabled={isSubmittingRating}
                     className="w-full py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-400 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
                   >
-                    {isSubmittingRating ? '提交中...' : '送出評價 🚀'}
+                    {isSubmittingRating ? '提交中...' : '送出評價'}
                   </button>
                 </div>
               );
@@ -698,7 +698,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
           {ratingSuccess && (
             <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-xl text-center text-xs font-bold text-green-700">
-              🎉 雙向評價成功！評價已發佈。
+              雙向評價成功！評價已發布。
             </div>
           )}
 
@@ -708,21 +708,20 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               {loadingExperts ? (
                 <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 gap-1.5">
                   <Loader2 size={12} className="animate-spin" />
-                  <span>正在智慧媒合最佳超人推薦...</span>
+                  <span>自動媒合最佳超人中...</span>
                 </div>
               ) : matchedExperts.length === 0 ? (
                 <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400">
-                  🤖 暫無此類別的歷史結案專家。本委託已自動廣播給符合此偏好的超人們！
+                  暫目前尚未有此類別的結案紀錄。別擔心，本委託已自動推播給符合偏好的超人們！
                 </div>
               ) : (
                 <div className="p-3 bg-red-50/40 border border-red-100/50 rounded-xl space-y-2.5">
                   <div className="flex justify-between items-center">
                     <h4 className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                      <span>🤖</span>
-                      <span>「{task.category}」智慧媒合專家</span>
+                      <span>「{task.category}」自動媒合系統</span>
                     </h4>
                     <span className="text-[9px] bg-red-500 text-white font-bold px-1 rounded animate-pulse">
-                      極速推薦
+                      推薦
                     </span>
                   </div>
                   
@@ -756,7 +755,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                               : "bg-red-500 hover:bg-red-600 text-white active:scale-95"
                           )}
                         >
-                          {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '私訊委託 💌'}
+                          {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '發出信號彈'}
                         </button>
                       </div>
                     ))}

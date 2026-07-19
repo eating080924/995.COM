@@ -17,28 +17,35 @@ export interface UserStats {
 export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   {
     id: 'rookie_hero',
-    title: '初出茅廬的超人',
+    title: '小試身手',
     description: '踏出互助的第一步！',
     conditionDescription: '成功承接並完成 1 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 1,
   },
   {
     id: 'helper_pro',
-    title: '熱心鄰里楷模',
-    description: '經常幫助鄰里解決難題。',
+    title: '內褲外穿的先驅者',
+    description: '初出茅廬，不需要太講究。',
     conditionDescription: '成功承接並完成 5 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 5,
   },
   {
-    id: 'legend_hero',
-    title: '救難大師 995',
-    description: '社區公認的萬能救星！',
+    id: 'first_hero',
+    title: '佔用電話亭的傢伙',
+    description: '換衣服需要點時間，請各位體諒。',
     conditionDescription: '成功承接並完成 15 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 15,
   },
   {
+    id: 'second_hero',
+    title: '穿披風的社區守護者',
+    description: '披風不是弱點，飛機引擎才是。',
+    conditionDescription: '成功承接並完成 45 次委託任務',
+    checkFn: (stats) => stats.completedAsAcceptor >= 45,
+  },
+  {
     id: 'generous_boss',
-    title: '慷慨的委託人',
+    title: '活躍的委託者',
     description: '樂於為社區帶來工作機會。',
     conditionDescription: '發布並順利完成 3 次委託任務',
     checkFn: (stats) => stats.completedAsRequester >= 3,
@@ -74,6 +81,8 @@ export const TASK_CATEGORIES = [
   '水電維修',
   '文書處理',
   '搬家協助',
+  '買賣交換',
+  '工作機會',
   '其他'
 ];
 
