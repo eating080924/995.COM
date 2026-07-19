@@ -185,9 +185,13 @@ async function startServer() {
 
   app.post("/api/send-push", async (req, res) => {
     const { userId, type, taskId, taskNum, taskContent, senderId, senderName } = req.body;
-    if (!userId || !type || !taskNum || !taskContent || !senderName) {
-      return res.status(400).json({ error: "Missing required notification details" });
+    if (!userId || !type) {
+      return res.status(400).json({ error: "Missing required notification details: userId and type are mandatory" });
     }
+
+    const safeTaskNum = taskNum || "N/A";
+    const safeTaskContent = taskContent || "";
+    const safeSenderName = senderName || "平台用戶";
 
     try {
       let subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
@@ -242,17 +246,20 @@ async function startServer() {
 
       // Build personalized localization messages
       let title = "任務進度更新 🚀";
-      let body = `任務 [${taskNum}] ${taskContent.slice(0, 30)}... \n異動者: ${senderName}`;
+      let body = `任務 [${safeTaskNum}] ${safeTaskContent.slice(0, 30)}... \n異動者: ${safeSenderName}`;
 
       if (type === "task_accepted") {
         title = "任務已被承接 🚀";
-        body = `您的委託任務 [${taskNum}] 已被 ${senderName} 承接，請留意後續進度。`;
+        body = `您的委託任務 [${safeTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
       } else if (type === "task_unaccepted") {
         title = "任務取消承接 ⚠️";
-        body = `承接人 ${senderName} 取消承接您的委託任務 [${taskNum}]，任務已重新開放。`;
+        body = `承接人 ${safeSenderName} 取消承接您的委託任務 [${safeTaskNum}]，任務已重新開放。`;
       } else if (type === "task_completed") {
         title = "委託完成結案 🎉";
-        body = `您承接的委託任務 [${taskNum}] 已由委託人 ${senderName} 審核完成並結案！`;
+        body = `您承接的委託任務 [${safeTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
+      } else if (type === "agent_invite") {
+        title = "專屬任務邀請 💌";
+        body = `案主 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
       }
 
       const payload = {

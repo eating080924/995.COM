@@ -35,7 +35,11 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) && (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'updatedAt', 'lastCancelledAt'])
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
+          'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
+          'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount'
+        ])
       );
       allow delete: if isOwner(userId);
     }
@@ -62,6 +66,8 @@ service cloud.firestore {
                data.content is string && data.content.size() <= 1000 &&
                data.reward is string && data.reward.size() <= 200 &&
                data.location is string && data.location.size() <= 300 &&
+               data.category is string && data.category.size() <= 50 &&
+               data.region is string && data.region.size() <= 50 &&
                data.contact is string && data.contact.size() <= 200 &&
                (data.deadlineStart is timestamp || data.deadlineStart is string) &&
                (data.deadlineEnd is timestamp || data.deadlineEnd is string) &&
@@ -82,7 +88,7 @@ service cloud.firestore {
           resource.data.status == 'open' &&
           request.resource.data.status == 'accepted' &&
           request.resource.data.acceptorId == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'acceptorName', 'updatedAt'])
         ) ||
         // Action: Cancel Accept (by acceptor)
         (
@@ -90,7 +96,8 @@ service cloud.firestore {
           resource.data.acceptorId == request.auth.uid &&
           request.resource.data.status == 'open' &&
           request.resource.data.get('acceptorId', null) == null &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'updatedAt'])
+          request.resource.data.get('acceptorName', null) == null &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'acceptorName', 'updatedAt'])
         ) ||
         // Action: Complete Task (by owner OR public cleanup)
         (
@@ -99,11 +106,17 @@ service cloud.firestore {
           (isOwner(resource.data.requesterId) || isExpired(resource.data.deadlineEnd, 0)) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
         ) ||
+        // Action: Rate Task (requester or acceptor marking as rated)
+        (
+          resource.data.status == 'completed' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasAny(['requesterRated', 'acceptorRated', 'updatedAt']) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['requesterRated', 'acceptorRated', 'updatedAt'])
+        ) ||
         // Owner Update (simple edit)
         (
           isOwner(resource.data.requesterId) &&
           resource.data.status == 'open' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'reward', 'location', 'contact', 'deadlineStart', 'deadlineEnd', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['content', 'reward', 'location', 'category', 'region', 'contact', 'deadlineStart', 'deadlineEnd', 'updatedAt'])
         ) ||
         // Action: Delete/Cancel/Expire Task (by owner, admin, or public cleanup)
         (
@@ -142,6 +155,26 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.senderId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 5. Ratings Collection
+    match /ratings/{ratingId} {
+      allow read: if true;
+      allow create: if isSignedIn() && 
+                    request.resource.data.raterId == request.auth.uid &&
+                    request.resource.data.rating >= 1 &&
+                    request.resource.data.rating <= 5 &&
+                    request.resource.data.createdAt == request.time;
+    }
+
+    // 6. Config Collection (For storing server VAPID keys)
+    match /config/{configId} {
+      allow read, write: if true;
+    }
+
+    // 7. Push Subscriptions Collection (For storing Web Push subscriptions)
+    match /push_subscriptions/{subId} {
+      allow read, write: if true;
     }
   }
 }

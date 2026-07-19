@@ -18,6 +18,8 @@ import { isInAppBrowser } from './lib/detector';
 import { AccountPrivacyPanel } from './components/AccountPrivacyPanel';
 import { CommunityLinks } from './components/CommunityLinks';
 import { AboutAndFaq } from './components/AboutAndFaq';
+import { TASK_CATEGORIES, TAIWAN_REGIONS } from './config/achievements';
+
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -27,6 +29,8 @@ function AppContent() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'privacy' | 'guide'>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
     message: string;
@@ -220,15 +224,41 @@ function AppContent() {
                       : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務'))}
               </h2>
               {(activeTab === 'all' || activeTab === 'open' || activeTab === 'accepted') && (
-                <div className="mt-4 relative max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                  <input 
-                    type="text" 
-                    placeholder="搜尋內容、地點、或任務編號..." 
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm"
-                  />
+                <div className="mt-4 flex flex-col sm:flex-row gap-3 max-w-2xl">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                    <input 
+                      type="text" 
+                      placeholder="搜尋內容、地點、或任務編號..." 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm"
+                    />
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
+                    >
+                      <option value="">所有任務類別</option>
+                      {TASK_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      value={regionFilter}
+                      onChange={(e) => setRegionFilter(e.target.value)}
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
+                    >
+                      <option value="">所有縣市地區</option>
+                      {TAIWAN_REGIONS.map(reg => (
+                        <option key={reg} value={reg}>{reg}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               )}
             </div>
@@ -263,7 +293,12 @@ function AppContent() {
             <AboutAndFaq />
           ) : (
             <>
-              <TaskList filter={activeTab} searchQuery={searchQuery} />
+              <TaskList 
+                filter={activeTab} 
+                searchQuery={searchQuery} 
+                categoryFilter={categoryFilter}
+                regionFilter={regionFilter}
+              />
               {activeTab === 'all' && (
                 <div className="border-t border-slate-200/60 pt-6">
                   <AboutAndFaq />

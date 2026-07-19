@@ -18,7 +18,7 @@ import { handleFirestoreError, OperationType } from './errorHandler';
 export interface AppNotification {
   id: string;
   userId: string; // recipient
-  type: 'task_accepted' | 'task_unaccepted' | 'task_completed';
+  type: 'task_accepted' | 'task_unaccepted' | 'task_completed' | 'agent_invite';
   taskId: string;
   taskNum: string;
   taskContent: string;
@@ -33,7 +33,7 @@ export interface AppNotification {
  */
 export async function sendNotification(params: {
   userId: string; // recipient ID
-  type: 'task_accepted' | 'task_unaccepted' | 'task_completed';
+  type: 'task_accepted' | 'task_unaccepted' | 'task_completed' | 'agent_invite';
   taskId: string;
   taskNum: string;
   taskContent: string;

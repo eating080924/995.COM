@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Task } from '../types';
 import { cn, formatTimeAgo } from '../lib/utils';
-import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash } from 'lucide-react';
+import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash, Star, Award, MessageSquare, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
 import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
@@ -10,9 +10,14 @@ import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
 import { sendNotification } from '../lib/notificationService';
+import { submitRating } from '../lib/ratingAndAchievements';
+
 
 export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const { user } = useAuth();
+  const isOwner = user?.uid === task.requesterId;
+  const isAcceptor = user?.uid === task.acceptorId;
+
   const [isEditing, setIsEditing] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
@@ -21,6 +26,132 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     variant?: 'danger' | 'primary';
     showCancel?: boolean;
   } | null>(null);
+
+  // Bidirectional rating states
+  const [ratingValue, setRatingValue] = useState(5);
+  const [ratingComment, setRatingComment] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
+  const [ratingSuccess, setRatingSuccess] = useState(false);
+
+  // Auto-matching states
+  const [matchedExperts, setMatchedExperts] = useState<any[]>([]);
+  const [loadingExperts, setLoadingExperts] = useState(false);
+  const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
+
+  // Fetch recommended experts dynamically based on category
+  useEffect(() => {
+    if (!isOwner || !user || !task.category || (task.status !== 'open' && task.status !== 'accepted')) {
+      return;
+    }
+
+    const fetchMatchedExperts = async () => {
+      setLoadingExperts(true);
+      try {
+        // 1. Query experts who completed this category in the past
+        const completedQ = query(
+          collection(db, 'tasks'),
+          where('category', '==', task.category),
+          where('status', '==', 'completed')
+        );
+        const completedSnap = await getDocs(completedQ);
+        const expertsMap = new Map<string, { uid: string; displayName: string; count: number; rating: number; ratingCount: number; activeTitle: string }>();
+
+        completedSnap.forEach((docSnap) => {
+          const t = docSnap.data();
+          if (t.acceptorId && t.acceptorId !== user.uid) {
+            const existing = expertsMap.get(t.acceptorId);
+            if (existing) {
+              existing.count += 1;
+            } else {
+              expertsMap.set(t.acceptorId, {
+                uid: t.acceptorId,
+                displayName: t.acceptorName || '超人',
+                count: 1,
+                rating: 5.0,
+                ratingCount: 1,
+                activeTitle: ''
+              });
+            }
+          }
+        });
+
+        // 2. Query users who set this category as preferred (subscription)
+        const prefQ = query(
+          collection(db, 'users'),
+          where('preferredCategories', 'array-contains', task.category)
+        );
+        const prefSnap = await getDocs(prefQ);
+        prefSnap.forEach((docSnap) => {
+          const u = docSnap.data();
+          if (docSnap.id !== user.uid) {
+            const existing = expertsMap.get(docSnap.id);
+            if (existing) {
+              existing.rating = u.averageRating || 5.0;
+              existing.ratingCount = u.ratingCount || 0;
+              existing.activeTitle = u.activeTitle || '';
+            } else {
+              expertsMap.set(docSnap.id, {
+                uid: docSnap.id,
+                displayName: u.displayName || '超人',
+                count: 0,
+                rating: u.averageRating || 5.0,
+                ratingCount: u.ratingCount || 0,
+                activeTitle: u.activeTitle || ''
+              });
+            }
+          }
+        });
+
+        // 3. Resolve additional profile details
+        const finalExperts = Array.from(expertsMap.values());
+        for (let exp of finalExperts) {
+          if (!exp.activeTitle) {
+            const uRef = doc(db, 'users', exp.uid);
+            const uSnap = await getDoc(uRef);
+            if (uSnap.exists()) {
+              const uData = uSnap.data();
+              exp.activeTitle = uData.activeTitle || '';
+              exp.rating = uData.averageRating || 5.0;
+              exp.ratingCount = uData.ratingCount || 0;
+            }
+          }
+        }
+
+        // Sort by completed count, then average rating
+        finalExperts.sort((a, b) => {
+          if (b.count !== a.count) return b.count - a.count;
+          return b.rating - a.rating;
+        });
+
+        setMatchedExperts(finalExperts.slice(0, 3));
+      } catch (err) {
+        console.error('Error fetching matched experts:', err);
+      } finally {
+        setLoadingExperts(false);
+      }
+    };
+
+    fetchMatchedExperts();
+  }, [task.id, task.category, task.status, isOwner, user]);
+
+  const handleInviteExpert = async (expertId: string, expertName: string) => {
+    if (!user) return;
+    try {
+      await sendNotification({
+        userId: expertId,
+        type: 'agent_invite' as any,
+        taskId: task.id,
+        taskNum: task.taskNum || '',
+        taskContent: `委託人邀請您承接任務：${task.content}`,
+        senderId: user.uid,
+        senderName: user.displayName || user.email || '委託人',
+      });
+      setNotifiedExperts([...notifiedExperts, expertId]);
+    } catch (err) {
+      console.error('Error inviting expert:', err);
+    }
+  };
+
 
   const handleAccept = async () => {
     if (!user) return;
@@ -93,6 +224,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           await updateDoc(taskRef, {
             status: 'accepted',
             acceptorId: user.uid,
+            acceptorName: user.displayName || user.email || '在線超人',
             updatedAt: serverTimestamp()
           });
 
@@ -146,6 +278,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           await updateDoc(taskRef, {
             status: 'open',
             acceptorId: deleteField(),
+            acceptorName: deleteField(),
             updatedAt: serverTimestamp()
           });
 
@@ -302,8 +435,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     });
   };
 
-  const isOwner = user?.uid === task.requesterId;
-  const isAcceptor = user?.uid === task.acceptorId;
 
   const formatDate = (dateValue: any) => {
     try {
@@ -336,6 +467,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               {task.status === 'accepted' && '進行中'}
               {task.status === 'completed' && '已結案'}
             </span>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {task.category && (
+                <span className="px-1.5 py-0.5 bg-red-50 text-red-500 rounded text-[9px] font-bold">
+                  📁 {task.category}
+                </span>
+              )}
+              {task.region && (
+                <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-500 rounded text-[9px] font-bold">
+                  📍 {task.region}
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-1 text-[9px] text-slate-400 font-mono">
               <Hash size={10} />
               {task.taskNum}
@@ -462,6 +605,166 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               </div>
             )}
           </div>
+
+          {/* Bidirectional Rating Section */}
+          {task.status === 'completed' && user && !ratingSuccess && (
+            (() => {
+              const showRequesterRating = isOwner && !task.requesterRated;
+              const showAcceptorRating = isAcceptor && !task.acceptorRated;
+
+              if (!showRequesterRating && !showAcceptorRating) return null;
+
+              const targetId = showRequesterRating ? task.acceptorId : task.requesterId;
+              const targetName = showRequesterRating ? (task.acceptorName || '承接人') : (task.requesterName || '委託人');
+              const targetRole = showRequesterRating ? 'acceptor' : 'requester';
+
+              if (!targetId) return null;
+
+              const handleSubmitLocalRating = async () => {
+                setIsSubmittingRating(true);
+                try {
+                  await submitRating({
+                    taskId: task.id,
+                    taskNum: task.taskNum || '',
+                    raterId: user.uid,
+                    raterName: user.displayName || user.email || '平台用戶',
+                    targetId: targetId,
+                    targetName: targetName,
+                    targetRole: targetRole as 'requester' | 'acceptor',
+                    rating: ratingValue,
+                    comment: ratingComment
+                  });
+                  setRatingSuccess(true);
+                } catch (err) {
+                  console.error('Error submitting rating:', err);
+                } finally {
+                  setIsSubmittingRating(false);
+                }
+              };
+
+              return (
+                <div className="mt-4 p-4 bg-slate-50 border border-slate-100 rounded-xl space-y-3 animate-fade-in">
+                  <h4 className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Star size={13} className="text-amber-500 fill-amber-500" />
+                    <span>給予「{targetName}」雙向評價</span>
+                  </h4>
+                  
+                  {/* Stars Selector */}
+                  <div className="flex gap-1.5 items-center">
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setRatingValue(star)}
+                        className="text-2xl focus:outline-none transition-transform hover:scale-125"
+                      >
+                        <span className={cn(
+                          "transition-colors",
+                          star <= ratingValue ? "text-amber-400" : "text-slate-300"
+                        )}>
+                          ★
+                        </span>
+                      </button>
+                    ))}
+                    <span className="text-xs font-bold text-slate-500 ml-2">
+                      {ratingValue} 顆星 ({
+                        ratingValue === 5 ? '極佳' :
+                        ratingValue === 4 ? '良好' :
+                        ratingValue === 3 ? '普通' :
+                        ratingValue === 2 ? '待加強' : '非常不滿'
+                      })
+                    </span>
+                  </div>
+
+                  {/* Comment Input */}
+                  <textarea
+                    placeholder="寫點感謝的話或回饋吧 (選填)..."
+                    value={ratingComment}
+                    onChange={(e) => setRatingComment(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-lg text-xs focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none bg-white min-h-[60px]"
+                  />
+
+                  <button
+                    onClick={handleSubmitLocalRating}
+                    disabled={isSubmittingRating}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-400 text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
+                  >
+                    {isSubmittingRating ? '提交中...' : '送出評價 🚀'}
+                  </button>
+                </div>
+              );
+            })()
+          )}
+
+          {ratingSuccess && (
+            <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-xl text-center text-xs font-bold text-green-700">
+              🎉 雙向評價成功！評價已發佈。
+            </div>
+          )}
+
+          {/* Smart Match Experts Recommended Section */}
+          {isOwner && (task.status === 'open' || task.status === 'accepted') && (
+            <div className="mt-4 pt-4 border-t border-slate-100">
+              {loadingExperts ? (
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 gap-1.5">
+                  <Loader2 size={12} className="animate-spin" />
+                  <span>正在智慧媒合最佳超人推薦...</span>
+                </div>
+              ) : matchedExperts.length === 0 ? (
+                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400">
+                  🤖 暫無此類別的歷史結案專家。本委託已自動廣播給符合此偏好的超人們！
+                </div>
+              ) : (
+                <div className="p-3 bg-red-50/40 border border-red-100/50 rounded-xl space-y-2.5">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                      <span>🤖</span>
+                      <span>「{task.category}」智慧媒合專家</span>
+                    </h4>
+                    <span className="text-[9px] bg-red-500 text-white font-bold px-1 rounded animate-pulse">
+                      極速推薦
+                    </span>
+                  </div>
+                  
+                  <div className="space-y-1.5">
+                    {matchedExperts.map((exp) => (
+                      <div key={exp.uid} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <span className="text-xs font-bold text-slate-800">{exp.displayName}</span>
+                            {exp.activeTitle && (
+                              <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded">
+                                🏆 {exp.activeTitle}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
+                            <span className="text-amber-500">★ {exp.rating} ({exp.ratingCount})</span>
+                            <span>•</span>
+                            <span>結案: {exp.count}次</span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleInviteExpert(exp.uid, exp.displayName)}
+                          disabled={notifiedExperts.includes(exp.uid)}
+                          className={cn(
+                            "px-2 py-1 rounded-md text-[9px] font-black transition-all shrink-0",
+                            notifiedExperts.includes(exp.uid)
+                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                              : "bg-red-500 hover:bg-red-600 text-white active:scale-95"
+                          )}
+                        >
+                          {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '私訊委託 💌'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </motion.div>
 

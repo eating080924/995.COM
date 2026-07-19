@@ -78,7 +78,12 @@ export function NotificationDropdown() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [showToast, setShowToast] = useState<AppNotification | null>(null);
-  const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>('default');
+  const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
   const [showPwaGuide, setShowPwaGuide] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -237,6 +242,13 @@ export function NotificationDropdown() {
           color: 'bg-blue-50 text-blue-700 border-blue-100',
           badgeColor: 'bg-blue-500',
           desc: `您承接的委託任務 [${n.taskNum}] 已由委託人 ${n.senderName} 審核完成並結案！`,
+        };
+      case 'agent_invite':
+        return {
+          title: '任務委託邀請 💌',
+          color: 'bg-red-50 text-red-700 border-red-100',
+          badgeColor: 'bg-red-500',
+          desc: `案主 ${n.senderName} 向您發出了專屬委託邀請！請點擊查看。`,
         };
       default:
         return {

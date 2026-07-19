@@ -10,12 +10,15 @@ import { Loader2, Inbox } from 'lucide-react';
 interface TaskListProps {
   filter: 'all' | 'open' | 'accepted' | 'my-tasks';
   searchQuery: string;
+  categoryFilter?: string;
+  regionFilter?: string;
 }
 
-export function TaskList({ filter, searchQuery }: TaskListProps) {
+export function TaskList({ filter, searchQuery, categoryFilter, regionFilter }: TaskListProps) {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+
 
   useEffect(() => {
     let q;
@@ -66,24 +69,36 @@ export function TaskList({ filter, searchQuery }: TaskListProps) {
   const filteredTasks = tasks.filter(task => {
     // Filter out expired open tasks on display
     if (task.status === 'open' && task.deadlineEnd) {
-      try {
-        const now = new Date();
-        const deadlineDate = task.deadlineEnd.toDate ? task.deadlineEnd.toDate() : new Date(task.deadlineEnd);
-        if (deadlineDate < now) {
-          return false;
-        }
-      } catch (e) {
-        console.warn('Error parsing deadlineEnd in TaskList:', e);
-      }
+       try {
+         const now = new Date();
+         const deadlineDate = task.deadlineEnd.toDate ? task.deadlineEnd.toDate() : new Date(task.deadlineEnd);
+         if (deadlineDate < now) {
+           return false;
+         }
+       } catch (e) {
+         console.warn('Error parsing deadlineEnd in TaskList:', e);
+       }
+    }
+
+    // Category Filter
+    if (categoryFilter && task.category !== categoryFilter) {
+      return false;
+    }
+
+    // Region Filter
+    if (regionFilter && task.region !== regionFilter) {
+      return false;
     }
 
     if (!searchQuery) return true;
     const lowerQuery = searchQuery.toLowerCase();
     return (
       task.content.toLowerCase().includes(lowerQuery) ||
-      task.location.toLowerCase().includes(lowerQuery) ||
-      task.reward.toLowerCase().includes(lowerQuery) ||
-      task.taskNum.includes(lowerQuery)
+      (task.location && task.location.toLowerCase().includes(lowerQuery)) ||
+      (task.reward && task.reward.toLowerCase().includes(lowerQuery)) ||
+      (task.taskNum && task.taskNum.includes(lowerQuery)) ||
+      (task.category && task.category.toLowerCase().includes(lowerQuery)) ||
+      (task.region && task.region.toLowerCase().includes(lowerQuery))
     );
   });
 

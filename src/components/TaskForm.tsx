@@ -4,9 +4,10 @@ import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp, query, 
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
-import { X, Loader2, AlertTriangle } from 'lucide-react';
+import { X, Loader2, AlertTriangle, Layers, MapPin } from 'lucide-react';
 import { Task } from '../types';
 import { isUserUnlimited } from '../config/unlimitedUsers';
+import { TASK_CATEGORIES, TAIWAN_REGIONS } from '../config/achievements';
 
 interface TaskFormProps {
   onClose: () => void;
@@ -19,8 +20,11 @@ interface FormData {
   deadlineStart: string;
   deadlineEnd: string;
   location: string;
+  category: string;
+  region: string;
   contact: string;
 }
+
 
 export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   const { user } = useAuth();
@@ -80,9 +84,13 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       deadlineStart: formatForInput(taskToEdit.deadlineStart),
       deadlineEnd: formatForInput(taskToEdit.deadlineEnd),
       location: taskToEdit.location,
+      category: taskToEdit.category || '跑腿代購',
+      region: taskToEdit.region || '台北市',
       contact: taskToEdit.contact,
     } : {
       deadlineStart: new Date().toISOString().slice(0, 16),
+      category: '跑腿代購',
+      region: '台北市',
     }
   });
 
@@ -237,6 +245,38 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               placeholder="例如：$100、午餐一份"
             />
             {errors.reward && <p className="text-red-500 text-xs mt-1">{errors.reward.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <Layers size={13} className="text-slate-400" />
+                <span>任務類別</span>
+              </label>
+              <select
+                {...register('category', { required: '請選擇任務類別' })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm font-semibold text-slate-700"
+              >
+                {TASK_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-1 flex items-center gap-1">
+                <MapPin size={13} className="text-slate-400" />
+                <span>縣市地區</span>
+              </label>
+              <select
+                {...register('region', { required: '請選擇縣市地區' })}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl bg-white focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm font-semibold text-slate-700"
+              >
+                {TAIWAN_REGIONS.map((reg) => (
+                  <option key={reg} value={reg}>{reg}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 gap-4">
