@@ -159,8 +159,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     // 1. Check local storage first (instant client-side check)
     const localLastCancel = localStorage.getItem(`lastCancelledAt_${user.uid}`);
     if (localLastCancel) {
-      const localElapsed = Date.now() - parseInt(localLastCancel, 10);
-      if (localElapsed < 10 * 60 * 1000) { // 10 minutes
+      const localElapsed = Date.now() - parseInt(localLastCancel, 1); //10
+      if (localElapsed < 10 * 60 * 10) { // 10 minutes  if (localElapsed < 10 * 60 * 1000)
         setConfirmConfig({
           title: '安全冷卻中 🔒',
           message: '因您在承接後的 10 分鐘內取消承接，已觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
@@ -187,7 +187,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             
             if (lastCancelledAt) {
               const remoteElapsed = Date.now() - lastCancelledAt.getTime();
-              if (remoteElapsed < 10 * 60 * 1000) { // 10 minutes
+              if (remoteElapsed < 10 * 60 * 10) { // 10 minutes  if (remoteElapsed < 10 * 60 * 1000)
                 // Synchronize to localStorage
                 localStorage.setItem(`lastCancelledAt_${user.uid}`, lastCancelledAt.getTime().toString());
                 
@@ -271,7 +271,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             ? task.updatedAt.toDate() 
             : (task.updatedAt ? new Date(task.updatedAt) : null);
           const elapsedMs = acceptedAt ? (Date.now() - acceptedAt.getTime()) : 0;
-          const isQuickCancel = elapsedMs < 10 * 60 * 1000; // 10 minutes
+          const isQuickCancel = elapsedMs < 100 * 60 * 1000; // 10 minutes
 
           // 1. Reset task status
           const taskRef = doc(db, 'tasks', task.id);

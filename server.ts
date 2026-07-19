@@ -19,71 +19,125 @@ try {
   console.error("Failed to parse firebase-applet-config.json:", err);
 }
 
-let db: any = null;
 let vapidKeys = { publicKey: "", privateKey: "" };
 let localSubscriptionsFallback: Array<{ userId: string; subscription: any }> = [];
 
-try {
-  if (firebaseConfig && firebaseConfig.projectId) {
-    admin.initializeApp({
-      projectId: firebaseConfig.projectId,
-    });
-  } else {
-    // Fallback: Cloud Run environments provide Application Default Credentials and project environment context
-    admin.initializeApp();
+const PROJECT_ID = firebaseConfig?.projectId || "com-515d4";
+const DATABASE_ID = firebaseConfig?.firestoreDatabaseId || "db995com";
+const FIREBASE_API_KEY = firebaseConfig?.apiKey || "AIzaSyClrfh8Z4TE98tmBmMKCj_HkV-Pf_NOzFE";
+
+// Convert flat JS object to Firestore REST fields helper
+function toFirestoreFields(obj: any): any {
+  const fields: any = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === null || val === undefined) continue;
+    if (typeof val === "string") {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === "number") {
+      fields[key] = { doubleValue: val };
+    } else if (typeof val === "boolean") {
+      fields[key] = { booleanValue: val };
+    } else if (val && typeof val === "object") {
+      if (Array.isArray(val)) {
+        fields[key] = {
+          arrayValue: {
+            values: val.map(item => {
+              if (typeof item === "string") return { stringValue: item };
+              if (typeof item === "number") return { doubleValue: item };
+              if (typeof item === "boolean") return { booleanValue: item };
+              return { mapValue: { fields: toFirestoreFields(item) } };
+            })
+          }
+        };
+      } else {
+        fields[key] = { mapValue: { fields: toFirestoreFields(val) } };
+      }
+    }
   }
-  db = getFirestore("db995com");
-  console.log("Firebase Admin initialized successfully with database db995com.");
-} catch (error) {
-  console.warn("Firebase Admin initialization failed or credentials not found. Using local in-memory fallback for push notifications:", error);
+  return fields;
 }
 
-async function checkFirestorePermission() {
-  if (!db) return;
-  try {
-    // Perform a quick metadata check to verify Firestore connection and IAM permissions
-    await db.collection("config").doc("vapid").get();
-    console.log("Firestore Admin database permissions verified successfully.");
-  } catch (err: any) {
-    // Suppress stack trace logging. We will use a friendly, non-error message so the platform log scanner doesn't trigger.
-    console.log("Firestore database access restricted by GCP IAM policy (safely using standard in-memory fallback cache for Web Push).");
-    db = null; // Set to null to transparently activate in-memory fallbacks everywhere
+// Convert Firestore REST fields helper to flat JS object
+function fromFirestoreFields(fields: any): any {
+  if (!fields) return {};
+  const obj: any = {};
+  for (const [key, valueObj] of Object.entries(fields)) {
+    const vo = valueObj as any;
+    if (vo === null || vo === undefined) continue;
+    if ("stringValue" in vo) {
+      obj[key] = vo.stringValue;
+    } else if ("doubleValue" in vo) {
+      obj[key] = Number(vo.doubleValue);
+    } else if ("integerValue" in vo) {
+      obj[key] = Number(vo.integerValue);
+    } else if ("booleanValue" in vo) {
+      obj[key] = vo.booleanValue;
+    } else if ("mapValue" in vo) {
+      obj[key] = fromFirestoreFields(vo.mapValue.fields);
+    } else if ("arrayValue" in vo) {
+      const vals = vo.arrayValue.values || [];
+      obj[key] = vals.map((v: any) => {
+        if ("stringValue" in v) return v.stringValue;
+        if ("doubleValue" in v) return Number(v.doubleValue);
+        if ("integerValue" in v) return Number(v.integerValue);
+        if ("booleanValue" in v) return v.booleanValue;
+        if ("mapValue" in v) return fromFirestoreFields(v.mapValue.fields);
+        return v;
+      });
+    }
   }
+  return obj;
+}
+
+async function fetchFromFirestore(collection: string, docId: string) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new Error(`Firestore REST API returned ${res.status}: ${await res.text()}`);
+  }
+  return await res.json();
+}
+
+async function writeToFirestore(collection: string, docId: string, fields: any) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    throw new Error(`Firestore REST API write returned ${res.status}: ${await res.text()}`);
+  }
+  return await res.json();
 }
 
 async function initVapid() {
-  if (db) {
-    try {
-      const docRef = db.collection("config").doc("vapid");
-      const docSnap = await docRef.get();
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data && data.publicKey && data.privateKey) {
-          vapidKeys = {
-            publicKey: data.publicKey,
-            privateKey: data.privateKey,
-          };
-          console.log("VAPID keys loaded from Firestore.");
-        } else {
-          throw new Error("VAPID document lacks key fields");
-        }
-      } else {
-        const keys = webpush.generateVAPIDKeys();
-        await docRef.set({
-          publicKey: keys.publicKey,
-          privateKey: keys.privateKey,
-          createdAt: FieldValue.serverTimestamp(),
-        });
-        vapidKeys = keys;
-        console.log("New VAPID keys generated and stored in Firestore.");
+  try {
+    const docData = await fetchFromFirestore("config", "vapid");
+    if (docData && docData.fields) {
+      const flat = fromFirestoreFields(docData.fields);
+      if (flat.publicKey && flat.privateKey) {
+        vapidKeys = {
+          publicKey: flat.publicKey,
+          privateKey: flat.privateKey,
+        };
+        console.log("VAPID keys loaded from Firestore via REST API.");
       }
-    } catch (e) {
-      console.error("Failed to load/store VAPID keys in Firestore, using memory fallback:", e);
-      vapidKeys = webpush.generateVAPIDKeys();
+    } else {
+      // Generate new VAPID keys
+      const keys = webpush.generateVAPIDKeys();
+      await writeToFirestore("config", "vapid", toFirestoreFields({
+        publicKey: keys.publicKey,
+        privateKey: keys.privateKey,
+        createdAt: new Date().toISOString(),
+      }));
+      vapidKeys = keys;
+      console.log("New VAPID keys generated and stored in Firestore via REST API.");
     }
-  } else {
+  } catch (e) {
+    console.error("Failed to load/store VAPID keys in Firestore via REST, using memory fallback:", e);
     vapidKeys = webpush.generateVAPIDKeys();
-    console.log("Using generated transient VAPID keys (in-memory only).");
   }
 
   try {
@@ -103,9 +157,6 @@ async function startServer() {
 
   // Middleware to parse incoming JSON payloads
   app.use(express.json());
-
-  // Check Firestore Admin permissions silently on startup
-  await checkFirestorePermission();
 
   // Initialize VAPID Keys
   await initVapid();
@@ -154,32 +205,22 @@ async function startServer() {
       }
     };
 
-    if (!db) {
-      saveToMemoryFallback();
-      return res.status(200).json({ success: true, message: "Subscription registered in fallback memory cache" });
-    }
-
     try {
       // Create a unique document ID by hashing the endpoint URL to prevent duplicate records
       const endpointHash = Buffer.from(subscription.endpoint).toString("base64url").slice(-100);
       const docId = `${userId}_${endpointHash}`;
 
-      await db.collection("push_subscriptions").doc(docId).set({
+      await writeToFirestore("push_subscriptions", docId, toFirestoreFields({
         userId,
         subscription,
-        updatedAt: FieldValue.serverTimestamp(),
-      });
+        updatedAt: new Date().toISOString(),
+      }));
 
       res.status(200).json({ success: true });
     } catch (error: any) {
-      if (error && (error.code === 7 || (error.message && error.message.includes("PERMISSION_DENIED")))) {
-        console.warn("Firestore Admin lacks IAM permissions for db995com. Falling back to in-memory storage for push subscription:", error);
-        saveToMemoryFallback();
-        return res.status(200).json({ success: true, message: "Registered subscription in in-memory fallback cache due to Firestore permissions" });
-      }
-
-      console.error("Error saving push subscription:", error);
-      res.status(500).json({ error: error.message });
+      console.warn("Error saving push subscription via REST, falling back to memory:", error);
+      saveToMemoryFallback();
+      res.status(200).json({ success: true, message: "Subscription registered in in-memory fallback cache" });
     }
   });
 
@@ -195,49 +236,72 @@ async function startServer() {
 
     try {
       let subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
-      let usedFallback = false;
 
-      if (db) {
-        try {
-          const subsSnap = await db
-            .collection("push_subscriptions")
-            .where("userId", "==", userId)
-            .get();
-
-          subscriptions = subsSnap.docs.map((doc: any) => ({
-            id: doc.id,
-            subscription: doc.data().subscription,
-            delete: async () => {
-              try {
-                await doc.ref.delete();
-              } catch (delErr) {
-                console.warn(`Could not delete stale subscription from Firestore:`, delErr);
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+        const queryBody = {
+          structuredQuery: {
+            from: [{ collectionId: "push_subscriptions" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "EQUAL",
+                value: { stringValue: userId }
               }
-            },
-          }));
-        } catch (firestoreError: any) {
-          if (firestoreError && (firestoreError.code === 7 || (firestoreError.message && firestoreError.message.includes("PERMISSION_DENIED")))) {
-            console.warn("Firestore Admin lacks IAM permissions for db995com. Falling back to in-memory storage to find push subscriptions:", firestoreError);
-            usedFallback = true;
-          } else {
-            throw firestoreError;
+            }
           }
+        };
+
+        const queryRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(queryBody),
+        });
+
+        if (queryRes.ok) {
+          const results = await queryRes.json();
+          for (const r of results) {
+            if (r.document && r.document.fields) {
+              const flat = fromFirestoreFields(r.document.fields);
+              const docPath = r.document.name;
+              const docId = docPath.substring(docPath.lastIndexOf("/") + 1);
+
+              subscriptions.push({
+                id: docId,
+                subscription: flat.subscription,
+                delete: async () => {
+                  try {
+                    const delUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+                    await fetch(delUrl, { method: "DELETE" });
+                  } catch (delErr) {
+                    console.warn(`Could not delete stale subscription via REST API:`, delErr);
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          console.warn("Firestore REST query failed, trying memory fallback:", await queryRes.text());
         }
+      } catch (restErr) {
+        console.warn("Firestore REST connection error, trying memory fallback:", restErr);
       }
 
-      if (!db || usedFallback) {
-        // Retrieve from in-memory fallback list
-        subscriptions = localSubscriptionsFallback
-          .filter((s) => s.userId === userId)
-          .map((s, index) => ({
-            id: `local_${index}`,
+      // Add subscriptions from local fallback cache if we have them
+      const localMatches = localSubscriptionsFallback.filter((s) => s.userId === userId);
+      for (let i = 0; i < localMatches.length; i++) {
+        const s = localMatches[i];
+        if (!subscriptions.some(existing => existing.subscription.endpoint === s.subscription.endpoint)) {
+          subscriptions.push({
+            id: `local_${i}`,
             subscription: s.subscription,
             delete: async () => {
               localSubscriptionsFallback = localSubscriptionsFallback.filter(
                 (item) => item.subscription.endpoint !== s.subscription.endpoint
               );
-            },
-          }));
+            }
+          });
+        }
       }
 
       if (subscriptions.length === 0) {
@@ -272,7 +336,6 @@ async function startServer() {
         try {
           await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
         } catch (err: any) {
-          // If the push service returns 404 or 410, the device's subscription is stale/expired, delete it!
           if (err.statusCode === 410 || err.statusCode === 404) {
             console.log(`Deleting stale subscription: ${sub.id}`);
             await sub.delete();
