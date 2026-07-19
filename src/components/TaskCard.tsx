@@ -38,6 +38,33 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [loadingExperts, setLoadingExperts] = useState(false);
   const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
 
+  // Acceptor profile state for displaying rating and title
+  const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string; averageRating?: number; ratingCount?: number } | null>(null);
+
+  useEffect(() => {
+    if (!task.acceptorId) {
+      setAcceptorProfile(null);
+      return;
+    }
+    const fetchAcceptorProfile = async () => {
+      try {
+        const uRef = doc(db, 'users', task.acceptorId!);
+        const uSnap = await getDoc(uRef);
+        if (uSnap.exists()) {
+          const uData = uSnap.data();
+          setAcceptorProfile({
+            activeTitle: uData.activeTitle || '',
+            averageRating: uData.averageRating !== undefined ? uData.averageRating : 5.0,
+            ratingCount: uData.ratingCount || 0,
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching acceptor profile:', err);
+      }
+    };
+    fetchAcceptorProfile();
+  }, [task.acceptorId]);
+
   // Fetch recommended experts dynamically based on category
   useEffect(() => {
     if (!isOwner || !user || !task.category || (task.status !== 'open' && task.status !== 'accepted')) {
@@ -496,6 +523,34 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
         <p className="text-xs text-slate-500 mb-4 flex-grow italic">
           由 {task.requesterName || '匿名用戶'} 於 {formatTimeAgo(task.createdAt?.toDate ? task.createdAt.toDate() : new Date())} 發布
         </p>
+
+        {task.acceptorId && (
+          <div className="mb-4 p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 min-w-0">
+              <UserCircle size={28} className="text-slate-400 shrink-0" />
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-extrabold text-slate-700 truncate">
+                  承接超人：{task.acceptorName || '在線超人'}
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  {acceptorProfile?.activeTitle ? (
+                    <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded shrink-0">
+                      🏆 {acceptorProfile.activeTitle}
+                    </span>
+                  ) : (
+                    <span className="px-1 py-0.2 bg-slate-100 text-slate-500 font-bold text-[8px] border border-slate-200 rounded shrink-0">
+                      無稱號
+                    </span>
+                  )}
+                  <span className="text-[10px] text-amber-500 font-bold flex items-center gap-0.5 shrink-0">
+                    ★ {acceptorProfile?.averageRating !== undefined ? acceptorProfile.averageRating : '5.0'}
+                    <span className="text-slate-400 font-medium">({acceptorProfile?.ratingCount || 0}次評價)</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="mt-auto space-y-2 border-t pt-4 border-slate-50">
           <div className="flex items-center text-[11px] text-slate-500">
