@@ -37,9 +37,23 @@
       "properties": {
         "displayName": { "type": "string" },
         "photoURL": { "type": "string" },
+        "preferredCategories": { "type": "array", "description": "Categories user wants to subscribe to" },
+        "preferredRegions": { "type": "array", "description": "Regions user wants to subscribe to" },
+        "activeTitle": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["displayName", "createdAt"]
+    },
+    "PushSubscription": {
+      "title": "PushSubscription",
+      "description": "Web Push subscription record for a user.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "subscription": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "subscription"]
     }
   },
   "firestore": {
@@ -54,6 +68,10 @@
     "users": {
       "schema": "User",
       "description": "User profiles."
+    },
+    "push_subscriptions": {
+      "schema": "PushSubscription",
+      "description": "Web Push subscription credentials."
     }
   }
 }

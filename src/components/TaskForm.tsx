@@ -144,17 +144,58 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           }
         }
 
+        const taskNum = generateTaskNum();
         await addDoc(collection(db, 'tasks'), {
           ...data,
           deadlineStart: Timestamp.fromDate(new Date(data.deadlineStart)),
           deadlineEnd: Timestamp.fromDate(new Date(data.deadlineEnd)),
-          taskNum: generateTaskNum(),
+          taskNum,
           status: 'open',
           requesterId: user.uid,
           requesterName: user.displayName,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
+
+        // Query users matching preferences client-side (fully authenticated)
+        let matchedUserIds: string[] = [];
+        try {
+          const qCat = query(collection(db, 'users'), where('preferredCategories', 'array-contains', data.category));
+          const qReg = query(collection(db, 'users'), where('preferredRegions', 'array-contains', data.region));
+          const [snapCat, snapReg] = await Promise.all([getDocs(qCat), getDocs(qReg)]);
+          
+          const uids = new Set<string>();
+          snapCat.forEach(doc => {
+            if (doc.id !== user.uid) uids.add(doc.id);
+          });
+          snapReg.forEach(doc => {
+            if (doc.id !== user.uid) uids.add(doc.id);
+          });
+          matchedUserIds = Array.from(uids);
+        } catch (queryErr) {
+          console.warn('Failed to query matching user preferences client-side:', queryErr);
+        }
+
+        // Fire and forget: send push notifications to users matching interest subscriptions/preferences in the background
+        try {
+          fetch('/api/send-matching-push', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userIds: matchedUserIds,
+              category: data.category,
+              region: data.region,
+              taskNum,
+              taskContent: data.content,
+              senderId: user.uid,
+              senderName: user.displayName || '平台用戶',
+            }),
+          }).catch((err) => console.warn('Failed to send matching push notification:', err));
+        } catch (pushErr) {
+          console.warn('Matching push trigger failed:', pushErr);
+        }
       }
       onClose();
     } catch (error: any) {

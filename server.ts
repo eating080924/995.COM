@@ -353,6 +353,140 @@ async function startServer() {
     }
   });
 
+  app.post("/api/send-matching-push", async (req, res) => {
+    const { userIds, category, region, taskNum, taskContent, senderId, senderName } = req.body;
+    if (!category || !region || !taskNum) {
+      return res.status(400).json({ error: "Missing required details: category, region, and taskNum are mandatory" });
+    }
+
+    const safeTaskContent = taskContent || "";
+    const safeSenderName = senderName || "平台用戶";
+
+    const userIdsArray = Array.isArray(userIds) ? userIds : [];
+    if (userIdsArray.length === 0) {
+      return res.status(200).json({ success: true, message: "No matched users found" });
+    }
+
+    try {
+      const matchedUserIds = new Set<string>(userIdsArray);
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+
+      // Fetch push subscriptions for all matched users
+      const uidsArray = Array.from(matchedUserIds);
+      const chunkSize = 30;
+      const fetchSubscriptionPromises = [];
+
+      for (let i = 0; i < uidsArray.length; i += chunkSize) {
+        const chunk = uidsArray.slice(i, i + chunkSize);
+        const querySubBody = {
+          structuredQuery: {
+            from: [{ collectionId: "push_subscriptions" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "IN",
+                value: {
+                  arrayValue: {
+                    values: chunk.map(uid => ({ stringValue: uid }))
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        fetchSubscriptionPromises.push(
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(querySubBody),
+          }).then(r => r.ok ? r.json() : [])
+        );
+      }
+
+      const subResultsArray = await Promise.all(fetchSubscriptionPromises);
+
+      const subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
+      for (const results of subResultsArray) {
+        if (Array.isArray(results)) {
+          for (const r of results) {
+            if (r.document && r.document.fields) {
+              const flat = fromFirestoreFields(r.document.fields);
+              const docPath = r.document.name;
+              const docId = docPath.substring(docPath.lastIndexOf("/") + 1);
+
+              // Avoid duplicate subscriptions
+              if (!subscriptions.some(existing => existing.subscription.endpoint === flat.subscription.endpoint)) {
+                subscriptions.push({
+                  id: docId,
+                  subscription: flat.subscription,
+                  delete: async () => {
+                    try {
+                      const delUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+                      await fetch(delUrl, { method: "DELETE" });
+                    } catch (delErr) {
+                      console.warn(`Could not delete stale subscription via REST API:`, delErr);
+                    }
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Add subscriptions from local fallback cache if we have them
+      const localMatches = localSubscriptionsFallback.filter((s) => matchedUserIds.has(s.userId));
+      for (let i = 0; i < localMatches.length; i++) {
+        const s = localMatches[i];
+        if (!subscriptions.some(existing => existing.subscription.endpoint === s.subscription.endpoint)) {
+          subscriptions.push({
+            id: `local_${i}`,
+            subscription: s.subscription,
+            delete: async () => {
+              localSubscriptionsFallback = localSubscriptionsFallback.filter(
+                (item) => item.subscription.endpoint !== s.subscription.endpoint
+              );
+            }
+          });
+        }
+      }
+
+      if (subscriptions.length === 0) {
+        return res.status(200).json({ success: true, message: "Matched users found, but they have no push subscriptions" });
+      }
+
+      // Send the match notifications
+      const title = "任務推薦 🎯 符合您的偏好設定！";
+      const body = `「${category}」於「${region}」有新發布任務：\n${safeTaskContent.slice(0, 30)}${safeTaskContent.length > 30 ? "..." : ""}\n發布人: ${safeSenderName}`;
+
+      const payload = {
+        title,
+        body,
+        url: "/",
+      };
+
+      const sendPromises = subscriptions.map(async (sub) => {
+        try {
+          await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
+        } catch (err: any) {
+          if (err.statusCode === 410 || err.statusCode === 404) {
+            console.log(`Deleting stale subscription: ${sub.id}`);
+            await sub.delete();
+          } else {
+            console.error(`Error sending Match Web Push to subscription ${sub.id}:`, err);
+          }
+        }
+      });
+
+      await Promise.all(sendPromises);
+      res.status(200).json({ success: true, matchedCount: matchedUserIds.size, notifiedCount: subscriptions.length });
+    } catch (error: any) {
+      console.error("Error in send-matching-push API execution:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Explicit route for ads.txt to guarantee AdSense crawler reliability and bypass cold start static resolution quirks
   app.get("/ads.txt", (req, res) => {
     res.set("Content-Type", "text/plain");
