@@ -37,6 +37,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [matchedExperts, setMatchedExperts] = useState<any[]>([]);
   const [loadingExperts, setLoadingExperts] = useState(false);
   const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
+  const [isExpertsExpanded, setIsExpertsExpanded] = useState(false);
 
   // Acceptor profile state for displaying active title
   const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
@@ -660,59 +661,81 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           {/* Smart Match Experts Recommended Section */}
           {isOwner && (task.status === 'open' || task.status === 'accepted') && (
             <div className="mt-4 pt-4 border-t border-slate-100">
-              {loadingExperts ? (
-                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 gap-1.5">
-                  <Loader2 size={12} className="animate-spin" />
-                  <span>自動媒合最佳超人中...</span>
-                </div>
-              ) : matchedExperts.length === 0 ? (
-                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400">
-                  暫目前尚未有此類別的結案紀錄。別擔心，本委託已自動推播給符合偏好的超人們！
-                </div>
-              ) : (
-                <div className="p-3 bg-red-50/40 border border-red-100/50 rounded-xl space-y-2.5">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                      <span>「{task.category}」自動媒合系統</span>
-                    </h4>
-                    <span className="text-[9px] bg-red-500 text-white font-bold px-1 rounded animate-pulse">
-                      推薦
+              <button
+                type="button"
+                onClick={() => setIsExpertsExpanded(!isExpertsExpanded)}
+                className="w-full flex items-center justify-between py-1 px-2 hover:bg-slate-50 rounded-lg text-xs font-bold text-slate-600 transition-colors"
+              >
+                <div className="flex items-center gap-1.5 text-slate-700">
+                  <span>🤝 推薦最佳超人名單</span>
+                  {matchedExperts.length > 0 && (
+                    <span className="bg-red-500 text-white font-bold text-[9px] px-1.5 py-0.2 rounded-full">
+                      {matchedExperts.length}
                     </span>
-                  </div>
-                  
-                  <div className="space-y-1.5">
-                    {matchedExperts.map((exp) => (
-                      <div key={exp.uid} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
-                        <div className="flex flex-col gap-0.5">
-                          <div className="flex items-center gap-1 flex-wrap">
-                            <span className="text-xs font-bold text-slate-800">{exp.displayName}</span>
-                            {exp.activeTitle && (
-                              <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded">
-                                🏆 {exp.activeTitle}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
-                            <span>結案: {exp.count}次</span>
-                          </div>
-                        </div>
+                  )}
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  {isExpertsExpanded ? '收折 ▲' : '點擊展開 🤝'}
+                </span>
+              </button>
 
-                        <button
-                          type="button"
-                          onClick={() => handleInviteExpert(exp.uid, exp.displayName)}
-                          disabled={notifiedExperts.includes(exp.uid)}
-                          className={cn(
-                            "px-2 py-1 rounded-md text-[9px] font-black transition-all shrink-0",
-                            notifiedExperts.includes(exp.uid)
-                              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                              : "bg-red-500 hover:bg-red-600 text-white active:scale-95"
-                          )}
-                        >
-                          {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '發出信號彈'}
-                        </button>
+              {isExpertsExpanded && (
+                <div className="mt-2.5 animate-fade-in">
+                  {loadingExperts ? (
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 gap-1.5">
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>自動媒合中...</span>
+                    </div>
+                  ) : matchedExperts.length === 0 ? (
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400">
+                      暫目前尚未有此類別的結案紀錄。別擔心，本委託已自動推播給符合偏好的超人們！
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-red-50/40 border border-red-100/50 rounded-xl space-y-2.5">
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                          <span>「{task.category}」自動媒合系統</span>
+                        </h4>
+                        <span className="text-[9px] bg-red-500 text-white font-bold px-1 rounded animate-pulse">
+                          推薦
+                        </span>
                       </div>
-                    ))}
-                  </div>
+                      
+                      <div className="space-y-1.5">
+                        {matchedExperts.map((exp) => (
+                          <div key={exp.uid} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
+                            <div className="flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1 flex-wrap">
+                                <span className="text-xs font-bold text-slate-800">{exp.displayName}</span>
+                                {exp.activeTitle && (
+                                  <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded">
+                                    🏆 {exp.activeTitle}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
+                                <span>結案: {exp.count}次</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleInviteExpert(exp.uid, exp.displayName)}
+                              disabled={notifiedExperts.includes(exp.uid)}
+                              className={cn(
+                                "px-2 py-1 rounded-md text-[9px] font-black transition-all shrink-0",
+                                notifiedExperts.includes(exp.uid)
+                                  ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                  : "bg-red-500 hover:bg-red-600 text-white active:scale-95"
+                              )}
+                            >
+                              {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '發出信號彈'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

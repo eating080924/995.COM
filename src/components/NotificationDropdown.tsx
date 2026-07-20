@@ -397,6 +397,9 @@ export function NotificationDropdown() {
                         if (!n.read) {
                           await markAsRead(n.id);
                         }
+                        setIsOpen(false);
+                        const event = new CustomEvent('navigate-to-task', { detail: { taskId: n.taskId, type: n.type } });
+                        window.dispatchEvent(event);
                       }}
                       className={`p-4 transition-all duration-200 cursor-pointer flex gap-3 ${
                         n.read ? 'bg-white opacity-70 hover:opacity-100' : 'bg-red-50/30 hover:bg-red-50/50'
@@ -454,7 +457,17 @@ export function NotificationDropdown() {
             initial={{ opacity: 0, x: 100, y: 0, scale: 0.9 }}
             animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
             exit={{ opacity: 0, x: 100, scale: 0.9 }}
-            className="fixed top-24 right-4 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-800 p-4 flex gap-3.5"
+            className="fixed top-24 right-4 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-800 p-4 flex gap-3.5 cursor-pointer hover:bg-slate-800 transition-all duration-200"
+            onClick={async () => {
+              if (showToast) {
+                if (!showToast.read) {
+                  await markAsRead(showToast.id);
+                }
+                const event = new CustomEvent('navigate-to-task', { detail: { taskId: showToast.taskId, type: showToast.type } });
+                window.dispatchEvent(event);
+                setShowToast(null);
+              }
+            }}
           >
             <div className="flex-1 space-y-1">
               <div className="flex items-center justify-between">
@@ -463,7 +476,10 @@ export function NotificationDropdown() {
                   <span className="text-xs font-black tracking-wider uppercase text-amber-400">進度即時通知 🚨</span>
                 </div>
                 <button 
-                  onClick={() => setShowToast(null)} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowToast(null);
+                  }} 
                   className="text-slate-400 hover:text-white transition-colors"
                 >
                   <X size={14} />

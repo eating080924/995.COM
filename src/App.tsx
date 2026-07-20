@@ -83,6 +83,43 @@ function AppContent() {
     return () => window.removeEventListener('link-to-task', handleLinkToTask);
   }, []);
 
+  // Handle task linkage scrolling and highlighting from notifications
+  React.useEffect(() => {
+    const handleNavigateToTask = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const { taskId } = customEvent.detail || {};
+      if (!taskId) return;
+
+      // 1. Reset filter tab to 'all' so the task is guaranteed to be in the list
+      setActiveTab('all');
+      
+      // 2. Clear search and other filters so the target card is not hidden
+      setSearchQuery('');
+      setCategoryFilter('');
+      setRegionFilter('');
+
+      // 3. Scroll to the element after a short timeout to let the state update and render
+      setTimeout(() => {
+        const element = document.getElementById(`task-card-${taskId}`);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          
+          // Add a highly visible glowing red ring animation to draw focus
+          element.classList.add('ring-4', 'ring-red-500', 'ring-offset-2', 'animate-pulse', 'shadow-[0_0_30px_rgba(239,68,68,0.5)]');
+          
+          setTimeout(() => {
+            element.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2', 'animate-pulse', 'shadow-[0_0_30px_rgba(239,68,68,0.5)]');
+          }, 4000);
+        } else {
+          console.warn('Could not find task element with ID:', `task-card-${taskId}`);
+        }
+      }, 350);
+    };
+
+    window.addEventListener('navigate-to-task', handleNavigateToTask);
+    return () => window.removeEventListener('navigate-to-task', handleNavigateToTask);
+  }, []);
+
   const requireLogin = (action: () => void) => {
     if (user) {
       action();
