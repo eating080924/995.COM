@@ -60,10 +60,11 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
             </button>
             <button 
               onClick={onNewTask}
-              className="px-5 py-2.5 bg-slate-900 text-white rounded-full text-sm font-bold shadow-md hover:bg-slate-800 transition-all flex items-center gap-2 transform active:scale-95"
+              /* 加入 ml-2 或 ml-3 (Margin Left) 向右推 */
+              className="ml-2.5 flex-shrink-0 whitespace-nowrap px-3.5 py-1.5 text-xs sm:px-5 sm:py-2 bg-slate-900 text-white rounded-full font-bold shadow-md hover:bg-slate-800 transition-all flex items-center gap-1.5 transform active:scale-95"
             >
-              <PlusCircle size={18} />
-              <span className="hidden xs:inline">發佈需求</span>
+              <PlusCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px] flex-shrink-0" />
+              <span className="whitespace-nowrap">發佈任務</span>
             </button>
             <div className="flex items-center gap-3 ml-2 border-l pl-4 border-slate-100">
               <NotificationDropdown />

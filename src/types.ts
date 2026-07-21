@@ -18,6 +18,12 @@ export interface Task {
   acceptorName?: string;
   requesterRated?: boolean; // Whether requester rated acceptor
   acceptorRated?: boolean; // Whether acceptor rated requester
+  acceptorContacted?: boolean; // Whether acceptor confirmed they contacted the requester
+  acceptorContactedAt?: any;
+  acceptorCompleted?: boolean; // Whether acceptor reported the task as completed
+  acceptorCompletedAt?: any;
+  hasDispute?: boolean; // Whether there is a cancellation or deletion dispute
+  disputeReason?: string;
   createdAt: any;
   updatedAt: any;
 }

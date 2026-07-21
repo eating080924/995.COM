@@ -77,6 +77,8 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
     return `${year}-${month}-${day}T${hours}:${minutes}`;
   };
 
+  const nowLocalStr = React.useMemo(() => formatForInput(new Date()), []);
+
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: taskToEdit ? {
       content: taskToEdit.content,
@@ -88,7 +90,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       region: taskToEdit.region || '台北市',
       contact: taskToEdit.contact,
     } : {
-      deadlineStart: new Date().toISOString().slice(0, 16),
+      deadlineStart: formatForInput(new Date()),
       category: '跑腿代購',
       region: '台北市',
     }
@@ -325,7 +327,21 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               <label className="block text-sm font-bold text-slate-700 mb-1">任務開始時間</label>
               <input
                 type="datetime-local"
-                {...register('deadlineStart', { required: '請選擇開始時間' })}
+                min={!taskToEdit ? nowLocalStr : undefined}
+                {...register('deadlineStart', { 
+                  required: '請選擇開始時間',
+                  validate: (value) => {
+                    if (!taskToEdit) {
+                      const selected = new Date(value);
+                      const current = new Date();
+                      // Allow a 1-minute buffer for latency
+                      if (selected < new Date(current.getTime() - 60000)) {
+                        return '任務開始時間不得小於當下時間';
+                      }
+                    }
+                    return true;
+                  }
+                })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
               />
               {errors.deadlineStart && <p className="text-red-500 text-xs mt-1">{errors.deadlineStart.message}</p>}

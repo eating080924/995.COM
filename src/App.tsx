@@ -10,7 +10,7 @@ import { BroadcastMarquee } from './components/BroadcastMarquee';
 import { TaskList } from './components/TaskList';
 import { TaskForm } from './components/TaskForm';
 import { BroadcastForm } from './components/BroadcastForm';
-import { Sparkles, PlusCircle, User as UserIcon, Search, Loader2 } from 'lucide-react';
+import { Sparkles, PlusCircle, User as UserIcon, Search, Loader2, Home, Shield } from 'lucide-react';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { performTaskCleanup } from './lib/taskCleanup';
 import { LoginModal } from './components/LoginModal';
@@ -167,46 +167,24 @@ function AppContent() {
       
       <BroadcastMarquee />
       
-      <main className="flex-1 max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-12 gap-8 p-4 md:p-8">
+      <main className="flex-1 max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-12 gap-8 p-4 md:p-8 pb-28 md:pb-8">
         {/* Sidebar */}
-        <aside className="md:col-span-3 space-y-6">
+        <aside className="hidden md:block md:col-span-3 space-y-6">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">功能選單</h3>
             <div className="space-y-1">
               <button 
-                onClick={() => setActiveTab('all')}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'all' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                onClick={() => requireLogin(() => setActiveTab('my-tasks'))}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
-                全部任務
+                個人委託
               </button>
               <button 
-                onClick={() => setActiveTab('open')}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'open' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                onClick={() => requireLogin(() => setActiveTab('privacy'))}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'privacy' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
-                開放中
+                帳戶與隱私
               </button>
-              <button 
-                onClick={() => setActiveTab('accepted')}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'accepted' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
-              >
-                進行中
-              </button>
-              {user && (
-                <div className="pt-2 mt-2 border-t border-slate-100 space-y-1">
-                  <button 
-                    onClick={() => setActiveTab('my-tasks')}
-                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    個人委託
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('privacy')}
-                    className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'privacy' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
-                  >
-                    帳戶與隱私
-                  </button>
-                </div>
-              )}
             </div>
           </div>
 
@@ -323,6 +301,7 @@ function AppContent() {
               searchQuery={searchQuery} 
               categoryFilter={categoryFilter}
               regionFilter={regionFilter}
+              onCategoryChange={setCategoryFilter}
             />
           )}
 
@@ -334,26 +313,36 @@ function AppContent() {
       </main>
 
       {/* PWA style Bottom Nav for mobile */}
-      <nav className="md:hidden bg-white border-t border-slate-200 flex justify-around items-center h-20 sticky bottom-0 z-40 px-2 pb-safe">
-        <button onClick={() => setActiveTab('all')} className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-red-500' : 'text-slate-400'}`}>
-          <Sparkles size={22} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} />
-          <span className="text-[10px] font-bold">主頁</span>
+      <nav className="md:hidden bg-white border-t border-slate-200/80 flex justify-around items-center h-20 fixed bottom-0 left-0 right-0 z-50 px-2 pb-safe shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
+        <button 
+          onClick={() => setActiveTab('all')} 
+          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
+        >
+          <Home size={20} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
+          <span className="text-[10px] tracking-wider">主頁</span>
         </button>
         <div className="flex flex-col items-center gap-1 group relative">
           <button 
             onClick={() => requireLogin(() => setShowTaskForm(true))}
-            className="-mt-12 w-14 h-14 bg-red-500 rounded-full flex items-center justify-center text-white shadow-lg border-4 border-white transform active:scale-90 transition-transform"
+            className="-mt-10 w-14 h-14 bg-slate-900 hover:bg-slate-800 rounded-full flex items-center justify-center text-white shadow-[0_4px_14px_rgba(15,23,42,0.3)] border-4 border-white transform active:scale-90 transition-transform"
           >
-            <PlusCircle size={28} strokeWidth={3} />
+            <PlusCircle size={26} strokeWidth={3} />
           </button>
-          <span className="text-[10px] font-bold text-slate-400">發佈</span>
+          <span className="text-[10px] font-bold text-slate-400">發佈任務</span>
         </div>
         <button 
           onClick={() => requireLogin(() => setActiveTab('my-tasks'))} 
-          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'text-red-500' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'my-tasks' ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
         >
-          <UserIcon size={22} fill={(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'currentColor' : 'none'} />
-          <span className="text-[10px] font-bold">個人</span>
+          <UserIcon size={20} fill={activeTab === 'my-tasks' ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
+          <span className="text-[10px] tracking-wider">個人委託</span>
+        </button>
+        <button 
+          onClick={() => requireLogin(() => setActiveTab('privacy'))} 
+          className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'privacy' ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
+        >
+          <Shield size={20} fill={activeTab === 'privacy' ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
+          <span className="text-[10px] tracking-wider">帳戶與隱私</span>
         </button>
       </nav>
 
