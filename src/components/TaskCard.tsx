@@ -222,7 +222,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     const localLastCancel = localStorage.getItem(`lastCancelledAt_${user.uid}`);
     if (localLastCancel) {
       const localElapsed = Date.now() - parseInt(localLastCancel, 1); //10
-      if (localElapsed < 10 * 60 * 10) { // 10 minutes  if (localElapsed < 10 * 60 * 1000)
+      if (localElapsed < 10 * 60 * 1000) { // 10 minutes  if (localElapsed < 10 * 60 * 1000)
         setConfirmConfig({
           title: '安全冷卻中 🔒',
           message: '因您在承接後的 10 分鐘內取消承接，已觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
