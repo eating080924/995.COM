@@ -218,5 +218,15 @@ service cloud.firestore {
     match /push_subscriptions/{subId} {
       allow read, write: if true;
     }
+
+    // 8. Violation Logs Collection
+    match /violation_logs/{logId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.reporterId == request.auth.uid);
+      allow create: if isSignedIn() && 
+                    request.resource.data.reporterId == request.auth.uid && 
+                    request.resource.data.userId is string &&
+                    request.resource.data.taskId is string &&
+                    request.resource.data.reason is string;
+    }
   }
 }

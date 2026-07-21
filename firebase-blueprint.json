@@ -54,6 +54,22 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "subscription"]
+    },
+    "ViolationLog": {
+      "title": "ViolationLog",
+      "description": "A record of an acceptor failing to contact the requester within 1 hour.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "UID of the violating acceptor" },
+        "userName": { "type": "string" },
+        "taskId": { "type": "string" },
+        "taskNum": { "type": "string" },
+        "reporterId": { "type": "string", "description": "UID of the reporter (requester)" },
+        "reason": { "type": "string" },
+        "penaltyApplied": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "taskId", "reporterId", "reason", "createdAt"]
     }
   },
   "firestore": {
@@ -72,6 +88,10 @@
     "push_subscriptions": {
       "schema": "PushSubscription",
       "description": "Web Push subscription credentials."
+    },
+    "violation_logs": {
+      "schema": "ViolationLog",
+      "description": "Log of user violations."
     }
   }
 }
