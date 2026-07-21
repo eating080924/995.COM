@@ -16,6 +16,7 @@ export interface Task {
   requesterName?: string;
   acceptorId?: string;
   acceptorName?: string;
+  acceptedAt?: any; // Timestamp when task was accepted
   requesterRated?: boolean; // Whether requester rated acceptor
   acceptorRated?: boolean; // Whether acceptor rated requester
   acceptorContacted?: boolean; // Whether acceptor confirmed they contacted the requester
@@ -55,8 +56,23 @@ export interface UserProfile {
   ratingSum?: number;
   averageRating?: number;
   broadcastCount?: number;
+  noContactViolationsCount?: number; // 無故未聯繫違規次數
+  penaltyStatus?: 'none' | 'suspended' | 'banned'; // 懲罰狀態：無、停權、封鎖
+  bannedUntil?: any; // 停權截止時間
   createdAt: any;
   updatedAt?: any;
+}
+
+export interface ViolationLog {
+  id: string;
+  userId: string; // 違規的超人 ID
+  userName: string; // 違規的超人姓名
+  taskId: string; // 相關任務 ID
+  taskNum: string; // 相關任務編號
+  reporterId: string; // 舉報人 ID (委託人)
+  reason: string; // 違規原因 (e.g., '無故未聯繫')
+  penaltyApplied: string; // 應用的懲罰 (e.g., '警告', '停權 7 天')
+  createdAt: any;
 }
 
 export interface Rating {

@@ -4,7 +4,7 @@ import { cn, formatTimeAgo } from '../lib/utils';
 import { MapPin, Clock, Trash2, Edit2, Phone, CheckCircle, UserCircle, XCircle, Hash, Award, MessageSquare, Loader2, ShieldAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../lib/AuthContext';
-import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, deleteDoc, serverTimestamp, deleteField, collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { TaskForm } from './TaskForm';
@@ -38,6 +38,42 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [loadingExperts, setLoadingExperts] = useState(false);
   const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
   const [isExpertsExpanded, setIsExpertsExpanded] = useState(false);
+
+  // States and effect for 'no contact' report timer (1-hour delay check)
+  const [canReportNoContact, setCanReportNoContact] = useState(false);
+  const [timeLeftToReport, setTimeLeftToReport] = useState<string>('');
+
+  useEffect(() => {
+    if (task.status !== 'accepted' || !task.acceptorId) {
+      setCanReportNoContact(false);
+      setTimeLeftToReport('');
+      return;
+    }
+
+    const calculateTimer = () => {
+      // Find acceptance time, fall back to updatedAt or createdAt
+      const acceptedTime = task.acceptedAt?.toDate 
+        ? task.acceptedAt.toDate() 
+        : (task.acceptedAt ? new Date(task.acceptedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date(task.updatedAt || task.createdAt)));
+      
+      const oneHourMs = 60 * 60 * 1000;
+      const elapsed = Date.now() - acceptedTime.getTime();
+      const remaining = oneHourMs - elapsed;
+
+      if (remaining <= 0) {
+        setCanReportNoContact(true);
+        setTimeLeftToReport('');
+      } else {
+        setCanReportNoContact(false);
+        const mins = Math.ceil(remaining / (60 * 1000));
+        setTimeLeftToReport(`需等待承接滿 1 個小時（剩餘 ${mins} 分鐘）`);
+      }
+    };
+
+    calculateTimer();
+    const interval = setInterval(calculateTimer, 10000); // Check every 10s
+    return () => clearInterval(interval);
+  }, [task.status, task.acceptedAt, task.updatedAt, task.createdAt, task.acceptorId]);
 
   // Acceptor profile state for displaying active title
   const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
@@ -207,13 +243,40 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
             const userData = userSnap.data();
+
+            // Check for Banned Status
+            if (userData.penaltyStatus === 'banned') {
+              setConfirmConfig({
+                title: '帳號已被封鎖 🚫',
+                message: '因您多次違反「無故未聯繫」或平台守則，此帳號已被系統永久封鎖，無法承接任何新任務。',
+                onConfirm: () => {},
+                showCancel: false
+              });
+              return;
+            }
+
+            // Check for Suspended Status
+            if (userData.penaltyStatus === 'suspended' && userData.bannedUntil) {
+              const bannedUntilDate = userData.bannedUntil.toDate ? userData.bannedUntil.toDate() : new Date(userData.bannedUntil);
+              if (bannedUntilDate.getTime() > Date.now()) {
+                const remainingDays = Math.ceil((bannedUntilDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+                setConfirmConfig({
+                  title: '帳號暫停接單中 ⏳',
+                  message: `因您先前多次「無故未聯繫」被回報，帳號目前處於暫停接單懲罰中，剩餘時間：約 ${remainingDays} 天 (截止至 ${bannedUntilDate.toLocaleDateString()} ${bannedUntilDate.toLocaleTimeString()})。`,
+                  onConfirm: () => {},
+                  showCancel: false
+                });
+                return;
+              }
+            }
+
             const lastCancelledAt = userData.lastCancelledAt?.toDate 
               ? userData.lastCancelledAt.toDate() 
               : (userData.lastCancelledAt ? new Date(userData.lastCancelledAt) : null);
             
             if (lastCancelledAt) {
               const remoteElapsed = Date.now() - lastCancelledAt.getTime();
-              if (remoteElapsed < 10 * 60 * 10) { // 10 minutes  if (remoteElapsed < 10 * 60 * 1000)
+              if (remoteElapsed < 10 * 60 * 1000) { // 10 minutes
                 // Synchronize to localStorage
                 localStorage.setItem(`lastCancelledAt_${user.uid}`, lastCancelledAt.getTime().toString());
                 
@@ -251,6 +314,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             status: 'accepted',
             acceptorId: user.uid,
             acceptorName: user.displayName || user.email || '在線超人',
+            acceptedAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
 
@@ -504,10 +568,19 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
   const handleReportNoContact = async () => {
     if (!user || user.uid !== task.requesterId) return;
+    if (!canReportNoContact) {
+      setConfirmConfig({
+        title: '時間未到 ⌛',
+        message: `為保障雙方權益，承接者有 1 小時的聯繫與處理時間。${timeLeftToReport}。`,
+        onConfirm: () => {},
+        showCancel: false
+      });
+      return;
+    }
 
     setConfirmConfig({
       title: '回報無故未聯繫並重新發布？',
-      message: '⚠️ 您即將回報承接者「承接後無故未與您聯繫」。確認後：\n1. 任務將重回【開放中】狀態，讓其他超人承接。\n2. 系統會記錄此事件並予以警告，維護發案權益。',
+      message: '⚠️ 您即將回報承接者「承接後無故未與您聯繫」。確認後：\n1. 任務將重回【開放中】狀態，讓其他超人承接。\n2. 系統會記錄此事件，並自動依照違規次數對承接者施加「警告、停權 3~7 天、永久封鎖」等信用處罰。',
       variant: 'danger',
       onConfirm: async () => {
         try {
@@ -518,6 +591,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             status: 'open',
             acceptorId: deleteField(),
             acceptorName: deleteField(),
+            acceptedAt: deleteField(),
             acceptorContacted: deleteField(),
             acceptorContactedAt: deleteField(),
             acceptorCompleted: deleteField(),
@@ -536,14 +610,67 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               senderName: user.displayName || '系統提醒',
             });
 
-            // Increment noContactStrikes on user profile to discourage bad behaviour
+            // Increment noContactViolationsCount / noContactStrikes and apply automatic tier-based penalty
             const accUserRef = doc(db, 'users', originalAcceptorId);
             const accUserSnap = await getDoc(accUserRef);
             if (accUserSnap.exists()) {
-              const currentStrikes = accUserSnap.data().noContactStrikes || 0;
+              const accData = accUserSnap.data();
+              const currentViolations = accData.noContactViolationsCount || accData.noContactStrikes || 0;
+              const newViolations = currentViolations + 1;
+
+              let penaltyStatus: 'none' | 'suspended' | 'banned' = 'none';
+              let bannedUntil: Date | null = null;
+              let penaltyApplied = '';
+
+              if (newViolations === 1) {
+                penaltyStatus = 'none';
+                penaltyApplied = '平台警告（第 1 次無故未聯繫違規）';
+              } else if (newViolations === 2) {
+                penaltyStatus = 'none';
+                penaltyApplied = '平台警告與信用提醒（第 2 次無故未聯繫違規）';
+              } else if (newViolations === 3) {
+                penaltyStatus = 'suspended';
+                bannedUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000); // 3 days suspension
+                penaltyApplied = '限制承接任務 3 天（第 3 次無故未聯繫違規）';
+              } else if (newViolations === 4) {
+                penaltyStatus = 'suspended';
+                bannedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days suspension
+                penaltyApplied = '限制承接任務 7 天（第 4 次無故未聯繫違規）';
+              } else {
+                penaltyStatus = 'banned';
+                penaltyApplied = '帳號永久封鎖（第 5 次無故未聯繫違規）';
+              }
+
+              // Update profile
               await updateDoc(accUserRef, {
-                noContactStrikes: currentStrikes + 1,
+                noContactViolationsCount: newViolations,
+                noContactStrikes: newViolations, // keep backward compatibility
+                penaltyStatus,
+                bannedUntil: bannedUntil ? bannedUntil : deleteField(),
                 updatedAt: serverTimestamp()
+              });
+
+              // Create Violation Log
+              await addDoc(collection(db, 'violation_logs'), {
+                userId: originalAcceptorId,
+                userName: task.acceptorName || '在線超人',
+                taskId: task.id,
+                taskNum: task.taskNum || '',
+                reporterId: user.uid,
+                reason: '無故未聯繫',
+                penaltyApplied: penaltyApplied,
+                createdAt: serverTimestamp()
+              });
+
+              // Send system warning notification to acceptor
+              await sendNotification({
+                userId: originalAcceptorId,
+                type: 'task_unaccepted',
+                taskId: task.id,
+                taskNum: task.taskNum || '',
+                taskContent: `⚠️ 系統處罰提醒：您已被委託人回報「無故未聯繫」。此事件已記錄在您的信用檔案中，當前處罰：${penaltyApplied}。請維護良好的接單信用。`,
+                senderId: 'system',
+                senderName: '系統管理員',
               });
             }
           }
@@ -764,13 +891,19 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 {isOwner && (
                   <div className="mb-2">
                     {!task.acceptorContacted ? (
-                      <div className="p-3 bg-red-50/70 border border-red-200/50 rounded-xl space-y-2">
-                        <p className="text-[10px] text-red-700 leading-relaxed font-bold">
-                          ⌛ 承接者尚未回報聯繫。若承接者超過 30 分鐘/1 小時無回應，您有權一鍵重啟委託，釋放名額。
+                      <div className={`p-3 border rounded-xl space-y-2 transition-all duration-300 ${canReportNoContact ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
+                        <p className={`text-[10px] leading-relaxed font-bold ${canReportNoContact ? 'text-red-700' : 'text-slate-500'}`}>
+                          {canReportNoContact 
+                            ? '⌛ 承接者已超過 1 小時未回報聯繫，您現在可以「一鍵重啟委託」，釋放名額並對違規超人進行系統懲罰。' 
+                            : `⌛ 承接者尚未回報聯繫。為了保障超人權益，系統已啟動 1 小時安全等待機制。\n(${timeLeftToReport})`}
                         </p>
                         <button
                           onClick={handleReportNoContact}
-                          className="w-full py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-black transition-all transform active:scale-95 shadow-sm"
+                          className={`w-full py-1.5 text-white rounded-lg text-[10px] font-black transition-all shadow-sm ${
+                            canReportNoContact 
+                              ? 'bg-red-600 hover:bg-red-700 active:scale-95 transform' 
+                              : 'bg-slate-300 cursor-not-allowed'
+                          }`}
                         >
                           回報「無故未聯繫」並重開委託 🚨
                         </button>

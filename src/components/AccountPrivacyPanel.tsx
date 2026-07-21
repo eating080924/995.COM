@@ -22,6 +22,7 @@ export function AccountPrivacyPanel() {
   // App settings and profile states
   const [profile, setProfile] = useState<any>(null);
   const [reviews, setReviews] = useState<any[]>([]);
+  const [violationLogs, setViolationLogs] = useState<any[]>([]);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -80,6 +81,24 @@ export function AccountPrivacyPanel() {
           setSelectedCategories(data?.preferredCategories || []);
           setSelectedRegions(data?.preferredRegions || []);
           setActiveTitle(data?.activeTitle || '');
+
+          // Fetch violation logs
+          const logsQ = query(
+            collection(db, 'violation_logs'),
+            where('userId', '==', user.uid)
+          );
+          const logsSnap = await getDocs(logsQ);
+          const logsList: any[] = [];
+          logsSnap.forEach((dSnap) => {
+            logsList.push({ id: dSnap.id, ...dSnap.data() });
+          });
+          // Sort by createdAt descending
+          logsList.sort((a, b) => {
+            const timeA = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+            const timeB = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+            return timeB - timeA;
+          });
+          setViolationLogs(logsList);
         } catch (err) {
           console.error('Error fetching profile:', err);
         } finally {
@@ -255,6 +274,149 @@ export function AccountPrivacyPanel() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* 1.5 接單信用與信用處罰紀錄 Section */}
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-md p-6 md:p-8 space-y-6">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
+          <div className="flex items-center gap-2.5">
+            <ShieldAlert size={20} className="text-red-500" />
+            <h3 className="font-black text-slate-800 text-sm">🛡️ 超人接單信用與違規紀錄</h3>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+              信用評級
+            </span>
+            {(!profile?.noContactViolationsCount || profile.noContactViolationsCount === 0) ? (
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg flex items-center gap-1">
+                🟢 卓越信譽 (Excellent)
+              </span>
+            ) : profile.noContactViolationsCount <= 2 ? (
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-amber-100 border border-amber-200 text-amber-700 rounded-lg flex items-center gap-1">
+                🟡 信用提醒 (Warning)
+              </span>
+            ) : profile.noContactViolationsCount <= 4 ? (
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-orange-100 border border-orange-200 text-orange-700 rounded-lg flex items-center gap-1">
+                🟠 限制接單中 (Restricted)
+              </span>
+            ) : (
+              <span className="text-[10px] font-extrabold px-2.5 py-0.5 bg-red-100 border border-red-200 text-red-700 rounded-lg flex items-center gap-1">
+                🔴 帳號永久封鎖 (Banned)
+              </span>
+            )}
+          </div>
+        </div>
+
+        <p className="text-xs text-slate-500 leading-relaxed font-medium">
+          為維護良好的鄰里互助體驗，平台設有<b>「自動信用處罰與違規紀錄」</b>。超人承接委託後，若<b>超過 1 小時未主動聯繫委託人且未回報處理狀態</b>，委託人有權回報「無故未聯繫」並重開委託。每次被回報成功後，系統將自動記錄違規並對超人帳號施加限制。
+        </p>
+
+        {/* Penalty Ladder */}
+        <div className="bg-slate-50 border border-slate-100/60 p-4 rounded-2xl space-y-3">
+          <h4 className="text-xs font-black text-slate-700">📌 平台信用處罰階梯規則 (Penalty Ladder)</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 text-[10px] font-bold">
+            <div className="p-2.5 bg-white rounded-xl border border-slate-150 flex flex-col justify-between">
+              <span className="text-slate-400 block mb-1">第 1 次違規</span>
+              <span className="text-slate-800">系統警告 ⚠️</span>
+            </div>
+            <div className="p-2.5 bg-white rounded-xl border border-slate-150 flex flex-col justify-between">
+              <span className="text-slate-400 block mb-1">第 2 次違規</span>
+              <span className="text-slate-800">警告與信用扣減提醒</span>
+            </div>
+            <div className="p-2.5 bg-white rounded-xl border border-amber-100 text-amber-800 flex flex-col justify-between">
+              <span className="text-amber-500 block mb-1">第 3 次違規</span>
+              <span>暫停接單 3 天 ⏳</span>
+            </div>
+            <div className="p-2.5 bg-white rounded-xl border border-orange-100 text-orange-800 flex flex-col justify-between">
+              <span className="text-orange-500 block mb-1">第 4 次違規</span>
+              <span>暫停接單 7 天 ⏳</span>
+            </div>
+            <div className="p-2.5 bg-red-50 rounded-xl border border-red-150 text-red-800 flex flex-col justify-between">
+              <span className="text-red-500 block mb-1">第 5 次及以上</span>
+              <span>永久封鎖接單功能 🚫</span>
+            </div>
+          </div>
+        </div>
+
+        {/* User Credit Status */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">無故未聯繫違規次數</span>
+            <span className="text-lg font-black text-slate-800 font-mono flex items-baseline gap-1">
+              {profile?.noContactViolationsCount || profile?.noContactStrikes || 0}
+              <span className="text-xs text-slate-500 font-bold">次 / 累計</span>
+            </span>
+          </div>
+
+          <div className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">當前帳號狀態</span>
+            <span className="text-xs font-extrabold flex items-center gap-1 pt-1">
+              {profile?.penaltyStatus === 'banned' ? (
+                <span className="text-red-600 bg-red-50 px-2 py-0.5 rounded border border-red-100">🚫 永久封鎖 (Banned)</span>
+              ) : profile?.penaltyStatus === 'suspended' ? (
+                <span className="text-orange-600 bg-orange-50 px-2 py-0.5 rounded border border-orange-100">⏳ 停權接單中 (Suspended)</span>
+              ) : (
+                <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">🟢 接單資格正常 (Active)</span>
+              )}
+            </span>
+          </div>
+
+          <div className="p-4 bg-slate-50/60 border border-slate-100 rounded-2xl space-y-1">
+            <span className="text-[10px] font-black text-slate-400 block">處罰截止時間</span>
+            <span className="text-xs font-extrabold text-slate-700 pt-1 block">
+              {profile?.penaltyStatus === 'suspended' && profile?.bannedUntil ? (
+                <span className="text-amber-600 font-mono">
+                  {profile.bannedUntil.toDate 
+                    ? profile.bannedUntil.toDate().toLocaleString() 
+                    : new Date(profile.bannedUntil).toLocaleString()}
+                </span>
+              ) : profile?.penaltyStatus === 'banned' ? (
+                <span className="text-red-600 font-bold">永久 (Permanent)</span>
+              ) : (
+                <span className="text-slate-400">無限制/未處罰</span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Violation History Logs */}
+        <div className="space-y-3">
+          <h4 className="text-xs font-black text-slate-700 flex items-center gap-1">
+            <span>📋 信用違規歷程紀錄 (Violation Logs)</span>
+            <span className="px-1.5 py-0.2 bg-slate-100 text-slate-500 text-[9px] rounded font-mono">
+              {violationLogs.length} 筆
+            </span>
+          </h4>
+
+          {violationLogs.length > 0 ? (
+            <div className="border border-slate-100 rounded-2xl divide-y divide-slate-100 overflow-hidden bg-slate-50/20">
+              {violationLogs.map((log) => (
+                <div key={log.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-slate-800 bg-white border border-slate-100 px-1.5 py-0.5 rounded">
+                        委託: #{log.taskNum}
+                      </span>
+                      <span className="text-red-600 font-black bg-red-50/80 px-1.5 py-0.5 rounded text-[10px]">
+                        違規原因: {log.reason}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      套用處罰: <span className="font-bold text-slate-700">{log.penaltyApplied}</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-slate-400 font-mono shrink-0">
+                    {log.createdAt?.toDate ? log.createdAt.toDate().toLocaleString() : new Date().toLocaleString()}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/20">
+              <p className="text-xs text-slate-400 font-medium">✨ 棒極了！您目前沒有任何無故未聯繫的違規紀錄，請繼續保持優良信用！</p>
+            </div>
+          )}
         </div>
       </div>
 
