@@ -34,12 +34,20 @@ service cloud.firestore {
     match /users/{userId} {
       allow read: if isSignedIn();
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && (
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
-          'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
-          'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount'
-        ])
+      allow update: if isSignedIn() && (
+        (
+          isOwner(userId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
+            'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
+            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount'
+          ])
+        ) ||
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'updatedAt'
+          ])
+        )
       );
       allow delete: if isOwner(userId);
     }
@@ -128,6 +136,40 @@ service cloud.firestore {
             (resource.data.status == 'open' && isExpired(resource.data.deadlineEnd, 0))
           ) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        ) ||
+        // Action: Report Contacted (by acceptor)
+        (
+          resource.data.status == 'accepted' &&
+          resource.data.acceptorId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptorContacted', 'acceptorContactedAt', 'updatedAt'])
+        ) ||
+        // Action: Report Completed (by acceptor)
+        (
+          resource.data.status == 'accepted' &&
+          resource.data.acceptorId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'])
+        ) ||
+        // Action: Report No Contact (by owner)
+        (
+          resource.data.status == 'accepted' &&
+          isOwner(resource.data.requesterId) &&
+          request.resource.data.status == 'open' &&
+          request.resource.data.get('acceptorId', null) == null &&
+          request.resource.data.get('acceptorName', null) == null &&
+          request.resource.data.get('acceptorContacted', null) == null &&
+          request.resource.data.get('acceptorContactedAt', null) == null &&
+          request.resource.data.get('acceptorCompleted', null) == null &&
+          request.resource.data.get('acceptorCompletedAt', null) == null &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'acceptorId', 'acceptorName', 'acceptorContacted', 
+            'acceptorContactedAt', 'acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'
+          ])
+        ) ||
+        // Action: Raise Dispute (by owner)
+        (
+          resource.data.status == 'accepted' &&
+          isOwner(resource.data.requesterId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hasDispute', 'disputeReason', 'updatedAt'])
         )
       );
 

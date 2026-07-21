@@ -7,16 +7,11 @@ import { NotificationDropdown } from './NotificationDropdown';
 interface NavbarProps {
   onNewTask: () => void;
   onNewBroadcast: () => void;
-  activeTab: 'all' | 'open' | 'accepted' | 'my-tasks';
-  setActiveTab: (tab: 'all' | 'open' | 'accepted' | 'my-tasks') => void;
 }
 
-export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: NavbarProps) {
+export function Navbar({ onNewTask, onNewBroadcast }: NavbarProps) {
   const { user, logout } = useAuth();
   const [showLoginModal, setShowLoginModal] = React.useState(false);
-
-  const isHomeActive = activeTab !== 'my-tasks';
-  const isMyTasksActive = activeTab === 'my-tasks';
 
   return (
     <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
@@ -32,23 +27,6 @@ export function Navbar({ onNewTask, onNewBroadcast, activeTab, setActiveTab }: N
       </div>
       
       <div className="flex items-center gap-6">
-        <nav className="hidden lg:flex gap-8">
-          <button 
-            onClick={() => setActiveTab('all')}
-            className={`text-sm font-semibold transition-colors ${isHomeActive ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
-          >
-            尋找任務
-          </button>
-          {user && (
-            <button 
-              onClick={() => setActiveTab('my-tasks')}
-              className={`text-sm font-semibold transition-colors ${isMyTasksActive ? 'text-red-500' : 'text-slate-500 hover:text-red-500'}`}
-            >
-              我的任務
-            </button>
-          )}
-        </nav>
-        
         {user ? (
           <div className="flex items-center gap-4">
             <button

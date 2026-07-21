@@ -161,8 +161,6 @@ function AppContent() {
       <Navbar 
         onNewTask={() => requireLogin(() => setShowTaskForm(true))} 
         onNewBroadcast={() => requireLogin(() => setShowBroadcastForm(true))}
-        activeTab={(activeTab === 'my-tasks' || activeTab === 'privacy') ? 'my-tasks' : 'all'}
-        setActiveTab={(tab) => setActiveTab(tab as any)}
       />
       
       <BroadcastMarquee />
@@ -173,6 +171,12 @@ function AppContent() {
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">功能選單</h3>
             <div className="space-y-1">
+              <button 
+                onClick={() => setActiveTab('all')}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+              >
+                回到首頁
+              </button>
               <button 
                 onClick={() => requireLogin(() => setActiveTab('my-tasks'))}
                 className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
