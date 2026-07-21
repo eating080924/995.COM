@@ -936,9 +936,23 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               <div className="flex flex-col gap-2 mt-1">
                 {!task.acceptorCompleted ? (
                   <>
+                    {!task.acceptorContacted && (
+                      <div className="p-3 bg-red-50 text-red-700 text-[10px] font-bold rounded-xl border border-red-200 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                        <span className="text-sm shrink-0">🔒</span>
+                        <span>
+                          <strong>前置關卡未解鎖</strong>：回報完成前，您必須先點擊上方的「我已主動聯繫委託人」按鈕，確認雙方已取得聯繫。
+                        </span>
+                      </div>
+                    )}
                     <button
+                      disabled={!task.acceptorContacted}
                       onClick={handleReportCompleted}
-                      className="w-full py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1 shadow-sm"
+                      className={cn(
+                        "w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm",
+                        task.acceptorContacted
+                          ? "bg-green-600 hover:bg-green-700 text-white transform active:scale-95 cursor-pointer"
+                          : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                      )}
                     >
                       <CheckCircle size={14} />
                       回報任務已完成 (鎖定刪除)
