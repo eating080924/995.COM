@@ -17,7 +17,7 @@ export interface UserStats {
 export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   {
     id: 'rookie_hero',
-    title: '日行一善小試身手',
+    title: '小試身手',
     description: '踏出互助的第一步！',
     conditionDescription: '成功承接並完成 1 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 1,
