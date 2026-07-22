@@ -308,12 +308,24 @@ async function startServer() {
         return res.status(200).json({ success: true, message: "No active push subscriptions found" });
       }
 
-      // Build personalized localization messages
+      // Build personalized localization messages matching NotificationDropdown.tsx
       let title = "任務進度更新 🚀";
       let body = `任務 [${safeTaskNum}] ${safeTaskContent.slice(0, 30)}... \n異動者: ${safeSenderName}`;
 
-      if (type === "task_accepted") {
-        title = "任務已被承接 🚀";
+      if (safeTaskContent.includes("已回報與您取得聯繫") || safeTaskContent.includes("已回報主動聯繫") || safeTaskContent.includes("主動聯繫委託人")) {
+        title = "承接者已回報主動聯繫 📞";
+        body = `承接超人 ${safeSenderName} 已回報主動與您取得聯繫，任務正式啟動。`;
+      } else if (safeTaskContent.includes("已回報「任務已完成」") || safeTaskContent.includes("已回報任務完成") || safeTaskContent.includes("已回報完工")) {
+        title = "承接者已回報任務完工 🏁";
+        body = `超人 ${safeSenderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`;
+      } else if (safeTaskContent.includes("您已向承接者提出") || safeTaskContent.includes("已向承接者提出")) {
+        title = "已向承接者提出「完工異議」 ⚖️";
+        body = `您已對任務 [${safeTaskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`;
+      } else if (safeTaskContent.includes("完工異議") || safeTaskContent.includes("提出異議")) {
+        title = "委託者已提出「完工異議」 ⚠️";
+        body = `委託人 ${safeSenderName} 對任務 [${safeTaskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`;
+      } else if (type === "task_accepted") {
+        title = "任務被承接 🚀";
         body = `您的委託任務 [${safeTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
       } else if (type === "task_unaccepted") {
         title = "任務取消承接 ⚠️";
@@ -322,7 +334,7 @@ async function startServer() {
         title = "委託完成結案 🎉";
         body = `您承接的委託任務 [${safeTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
       } else if (type === "agent_invite") {
-        title = "專屬任務邀請 💌";
+        title = "任務委託邀請 💌";
         body = `案主 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
       }
 
