@@ -266,16 +266,16 @@ export function NotificationDropdown() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-2xl border border-slate-200 shadow-xl z-50 overflow-hidden"
+            className="fixed inset-x-3 top-16 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-3 w-auto sm:w-96 max-h-[85vh] sm:max-h-none flex flex-col bg-white rounded-2xl border border-slate-200 shadow-2xl z-50 overflow-hidden"
           >
             {/* Header */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
               <div className="flex items-center gap-2">
                 <Bell size={16} className="text-slate-500" />
                 <span className="font-bold text-slate-800 text-sm">通知中心</span>
               </div>
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5">
                 {unreadCount > 0 && (
                   <button
                     onClick={() => markAllAsRead(user.uid)}
@@ -319,6 +319,14 @@ export function NotificationDropdown() {
                     )}
                   </div>
                 )}
+
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="sm:hidden p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors ml-1"
+                  aria-label="Close notification panel"
+                >
+                  <X size={18} />
+                </button>
               </div>
             </div>
 
@@ -395,7 +403,7 @@ export function NotificationDropdown() {
             </div>
 
             {/* Notification List */}
-            <div className="max-h-96 overflow-y-auto divide-y divide-slate-100">
+            <div className="max-h-[50vh] sm:max-h-96 overflow-y-auto divide-y divide-slate-100 flex-1">
               {notifications.length === 0 ? (
                 <div className="p-8 text-center text-slate-400">
                   <Bell size={32} className="mx-auto mb-2 opacity-30" />

@@ -7,19 +7,23 @@ import { NotificationDropdown } from './NotificationDropdown';
 interface NavbarProps {
   onNewTask: () => void;
   onNewBroadcast: () => void;
+  onGoHome?: () => void;
 }
 
-export function Navbar({ onNewTask, onNewBroadcast }: NavbarProps) {
+export function Navbar({ onNewTask, onNewBroadcast, onGoHome }: NavbarProps) {
   const { user, logout } = useAuth();
   const [showLoginModal, setShowLoginModal] = React.useState(false);
 
   return (
     <header className="flex items-center justify-between px-4 md:px-8 py-4 bg-white border-b border-slate-200 sticky top-0 z-40">
-      <div className="flex items-center gap-3">
+      <div 
+        className="flex items-center gap-3 cursor-pointer group"
+        onClick={onGoHome}
+      >
         <img 
           src="logo.png" 
           alt="995 委託板" 
-          className="w-30 h-20 object-contain" 
+          className="w-30 h-20 object-contain transition-transform group-hover:scale-105 active:scale-95" 
         />
         <div>
           <p className="hidden xs:block text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Urgent Task Marketplace</p>

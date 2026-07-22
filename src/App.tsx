@@ -120,6 +120,14 @@ function AppContent() {
     return () => window.removeEventListener('navigate-to-task', handleNavigateToTask);
   }, []);
 
+  const handleGoHome = () => {
+    setActiveTab('all');
+    setSearchQuery('');
+    setCategoryFilter('');
+    setRegionFilter('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const requireLogin = (action: () => void) => {
     if (user) {
       action();
@@ -161,6 +169,7 @@ function AppContent() {
       <Navbar 
         onNewTask={() => requireLogin(() => setShowTaskForm(true))} 
         onNewBroadcast={() => requireLogin(() => setShowBroadcastForm(true))}
+        onGoHome={handleGoHome}
       />
       
       <BroadcastMarquee />
@@ -172,7 +181,7 @@ function AppContent() {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">功能選單</h3>
             <div className="space-y-1">
               <button 
-                onClick={() => setActiveTab('all')}
+                onClick={handleGoHome}
                 className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
                 回到首頁
@@ -228,7 +237,7 @@ function AppContent() {
         <section className="md:col-span-9 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
             <div className="flex-1">
-              <h2 className="text-2xl font-black text-slate-800 tracking-tight">
+              <h2 className="text-lg font-black text-slate-800 tracking-tight">
                 {activeTab === 'privacy' 
                   ? '個人隱私與帳戶管理' 
                   : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務')}
@@ -250,7 +259,7 @@ function AppContent() {
                     <select
                       value={categoryFilter}
                       onChange={(e) => setCategoryFilter(e.target.value)}
-                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-base font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
                     >
                       <option value="">所有任務類別</option>
                       {TASK_CATEGORIES.map(cat => (
@@ -261,7 +270,7 @@ function AppContent() {
                     <select
                       value={regionFilter}
                       onChange={(e) => setRegionFilter(e.target.value)}
-                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
+                      className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-base font-bold text-slate-600 focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm cursor-pointer"
                     >
                       <option value="">所有縣市地區</option>
                       {TAIWAN_REGIONS.map(reg => (
@@ -319,7 +328,7 @@ function AppContent() {
       {/* PWA style Bottom Nav for mobile */}
       <nav className="md:hidden bg-white border-t border-slate-200/80 flex justify-around items-center h-20 fixed bottom-0 left-0 right-0 z-50 px-2 pb-safe shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
         <button 
-          onClick={() => setActiveTab('all')} 
+          onClick={handleGoHome} 
           className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
         >
           <Home size={20} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
@@ -328,7 +337,7 @@ function AppContent() {
         <div className="flex flex-col items-center gap-1 group relative">
           <button 
             onClick={() => requireLogin(() => setShowTaskForm(true))}
-            className="-mt-10 w-14 h-14 bg-slate-900 hover:bg-slate-800 rounded-full flex items-center justify-center text-white shadow-[0_4px_14px_rgba(15,23,42,0.3)] border-4 border-white transform active:scale-90 transition-transform"
+            className="-mt-10 w-14 h-14 bg-rose-600 hover:bg-rose-500 rounded-full flex items-center justify-center text-white shadow-[0_4px_14px_rgba(225,29,72,0.4)] border-4 border-white transform active:scale-90 transition-transform"
           >
             <PlusCircle size={26} strokeWidth={3} />
           </button>

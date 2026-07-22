@@ -223,7 +223,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
                 </div>
 
                 <div>
-                  <h3 className="font-black text-slate-800 text-sm sm:text-base leading-snug group-hover:text-red-600 transition-colors truncate">
+                  <h3 className="font-black text-slate-800 text-base sm:text-base leading-snug group-hover:text-red-600 transition-colors truncate">
                     {cat}
                   </h3>
                   <div className="flex items-center justify-between mt-1.5 sm:mt-2 pt-1.5 sm:pt-2 border-t border-slate-50">
