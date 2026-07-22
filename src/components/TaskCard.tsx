@@ -950,11 +950,22 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               type: 'task_unaccepted',
               taskId: task.id,
               taskNum: task.taskNum || '',
-              taskContent: `您的任務 [${task.taskNum}] 完工狀態已被委託人提出【完工異議】。本平台無客服介入機制，請雙方主動聯繫、友好溝通。`,
+              taskContent: `委託者已對您的任務 [${task.taskNum}] 提出【完工異議】。本平台無客服介入機制，請雙方主動聯繫、友好溝通。`,
               senderId: user.uid,
-              senderName: user.displayName || '系統提醒',
+              senderName: user.displayName || '委託人',
             });
           }
+
+          // Send confirmation notification to requester
+          await sendNotification({
+            userId: user.uid,
+            type: 'task_unaccepted',
+            taskId: task.id,
+            taskNum: task.taskNum || '',
+            taskContent: `您已向承接者提出【完工異議】，任務 [${task.taskNum}] 已進入雙方自主協商階段。`,
+            senderId: 'system',
+            senderName: '系統紀錄',
+          });
         } catch (error: any) {
           console.error('Failed to raise dispute:', error);
         }

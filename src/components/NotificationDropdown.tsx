@@ -77,7 +77,6 @@ export function NotificationDropdown() {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [showToast, setShowToast] = useState<AppNotification | null>(null);
   const [desktopPermission, setDesktopPermission] = useState<NotificationPermission>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission;
@@ -87,7 +86,6 @@ export function NotificationDropdown() {
   const [showPwaGuide, setShowPwaGuide] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const startupTime = useRef<number>(Date.now());
 
   // Register Service Worker for background and mobile notifications
   useEffect(() => {
@@ -117,30 +115,6 @@ export function NotificationDropdown() {
     }
 
     const unsubscribe = subscribeNotifications(user.uid, (updatedList) => {
-      // Find new unread notifications that were created after app startup
-      const newNotifications = updatedList.filter(n => {
-        if (n.read) return false;
-        const createdMs = n.createdAt?.toDate ? n.createdAt.toDate().getTime() : Date.now();
-        // Allow a 5-second window to prevent initial load spam
-        return createdMs > startupTime.current - 5000;
-      });
-
-      // If we got a new notification and the list actually grew or changed
-      if (newNotifications.length > 0) {
-        // Compare with current list to find the absolute latest one
-        const latestNew = newNotifications[0];
-        const isAlreadyKnown = notifications.some(existing => existing.id === latestNew.id);
-        
-        if (!isAlreadyKnown) {
-          // Trigger in-app Toast
-          setShowToast(latestNew);
-          // Auto-hide toast after 5 seconds
-          setTimeout(() => {
-            setShowToast(current => current?.id === latestNew.id ? null : current);
-          }, 5000);
-        }
-      }
-
       setNotifications(updatedList);
     });
 
@@ -152,7 +126,7 @@ export function NotificationDropdown() {
     return () => {
       unsubscribe();
     };
-  }, [user, notifications.length]);
+  }, [user]);
 
   // Click outside listener
   useEffect(() => {
@@ -171,7 +145,6 @@ export function NotificationDropdown() {
 
   const requestDesktopPermission = async () => {
     if (!('Notification' in window)) {
-      alert('您的瀏覽器不支援桌面通知功能。');
       return;
     }
     
@@ -187,6 +160,48 @@ export function NotificationDropdown() {
   };
 
   const getNotificationDetails = (n: AppNotification) => {
+    const content = n.taskContent || '';
+
+    // 1. 承接者已回報主動聯繫
+    if (content.includes('已回報與您取得聯繫') || content.includes('已回報主動聯繫') || content.includes('主動聯繫委託人')) {
+      return {
+        title: '承接者已回報主動聯繫 📞',
+        color: 'bg-teal-50 text-teal-700 border-teal-100',
+        badgeColor: 'bg-teal-500',
+        desc: `承接超人 ${n.senderName} 已回報主動與您取得聯繫，任務正式啟動。`,
+      };
+    }
+
+    // 2. 承接者已回報任務完工
+    if (content.includes('已回報「任務已完成」') || content.includes('已回報任務完成') || content.includes('已回報完工')) {
+      return {
+        title: '承接者已回報任務完工 🏁',
+        color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+        badgeColor: 'bg-emerald-500',
+        desc: `超人 ${n.senderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`,
+      };
+    }
+
+    // 3. 已向承接者提出「完工異議」
+    if (content.includes('您已向承接者提出') || content.includes('已向承接者提出')) {
+      return {
+        title: '已向承接者提出「完工異議」 ⚖️',
+        color: 'bg-amber-50 text-amber-700 border-amber-100',
+        badgeColor: 'bg-amber-500',
+        desc: `您已對任務 [${n.taskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`,
+      };
+    }
+
+    // 4. 委託者已提出「完工異議」
+    if (content.includes('完工異議') || content.includes('提出異議')) {
+      return {
+        title: '委託者已提出「完工異議」 ⚠️',
+        color: 'bg-rose-50 text-rose-700 border-rose-100',
+        badgeColor: 'bg-rose-500',
+        desc: `委託人 ${n.senderName} 對任務 [${n.taskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`,
+      };
+    }
+
     switch (n.type) {
       case 'task_accepted':
         return {
@@ -445,55 +460,6 @@ export function NotificationDropdown() {
                   );
                 })
               )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Floating Real-Time In-App Toast Notification */}
-      <AnimatePresence>
-        {showToast && (
-          <motion.div
-            initial={{ opacity: 0, x: 100, y: 0, scale: 0.9 }}
-            animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 100, scale: 0.9 }}
-            className="fixed top-24 right-4 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-800 p-4 flex gap-3.5 cursor-pointer hover:bg-slate-800 transition-all duration-200"
-            onClick={async () => {
-              if (showToast) {
-                if (!showToast.read) {
-                  await markAsRead(showToast.id);
-                }
-                const event = new CustomEvent('navigate-to-task', { detail: { taskId: showToast.taskId, type: showToast.type } });
-                window.dispatchEvent(event);
-                setShowToast(null);
-              }
-            }}
-          >
-            <div className="flex-1 space-y-1">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 animate-ping" />
-                  <span className="text-xs font-black tracking-wider uppercase text-amber-400">進度即時通知 🚨</span>
-                </div>
-                <button 
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowToast(null);
-                  }} 
-                  className="text-slate-400 hover:text-white transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <h5 className="text-sm font-black text-white pt-1">
-                {getNotificationDetails(showToast).title}
-              </h5>
-              <p className="text-xs font-semibold text-slate-300 leading-relaxed">
-                {getNotificationDetails(showToast).desc}
-              </p>
-              <div className="text-[10px] text-slate-400 bg-slate-950 p-2 rounded-lg border border-slate-800 italic line-clamp-1">
-                「{showToast.taskContent}」
-              </div>
             </div>
           </motion.div>
         )}
