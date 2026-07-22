@@ -45,15 +45,15 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   },
   {
     id: 'third_hero',
-    title: '胸前印著Ｓ的超級好人',
+    title: '胸前印著大寫Ｓ的好人',
     description: '擁有拯救世界的實力，但只想做個普通的好人。',
     conditionDescription: '成功承接並完成 100 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 100,
   },
   {
     id: 'generous_boss',
-    title: '活躍的委託者',
-    description: '樂於為社區帶來委託任務機會。',
+    title: '995 My Hero',
+    description: '樂於為超人帶來任務機會。',
     conditionDescription: '發布並順利完成 3 次委託任務',
     checkFn: (stats) => stats.completedAsRequester >= 3,
   },
