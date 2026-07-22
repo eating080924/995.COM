@@ -45,7 +45,7 @@ service cloud.firestore {
         ) ||
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'updatedAt'
+            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'noContactViolationsCount', 'penaltyStatus', 'bannedUntil', 'updatedAt'
           ])
         )
       );
@@ -96,7 +96,7 @@ service cloud.firestore {
           resource.data.status == 'open' &&
           request.resource.data.status == 'accepted' &&
           request.resource.data.acceptorId == request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'acceptorName', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'acceptorName', 'acceptedAt', 'updatedAt'])
         ) ||
         // Action: Cancel Accept (by acceptor)
         (
@@ -105,14 +105,17 @@ service cloud.firestore {
           request.resource.data.status == 'open' &&
           request.resource.data.get('acceptorId', null) == null &&
           request.resource.data.get('acceptorName', null) == null &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acceptorId', 'acceptorName', 'updatedAt'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'acceptorId', 'acceptorName', 'acceptedAt', 'acceptorContacted', 
+            'acceptorContactedAt', 'acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'
+          ])
         ) ||
-        // Action: Complete Task (by owner OR public cleanup)
+        // Action: Complete Task (by owner, acceptor, auto-completion, OR public cleanup)
         (
           resource.data.status == 'accepted' &&
           request.resource.data.status == 'completed' &&
-          (isOwner(resource.data.requesterId) || isExpired(resource.data.deadlineEnd, 0)) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+          (isOwner(resource.data.requesterId) || resource.data.acceptorId == request.auth.uid || resource.data.acceptorCompleted == true || isExpired(resource.data.deadlineEnd, 0)) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'autoCompletedBySystem', 'updatedAt'])
         ) ||
         // Action: Rate Task (requester or acceptor marking as rated)
         (
@@ -149,10 +152,9 @@ service cloud.firestore {
           resource.data.acceptorId == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'])
         ) ||
-        // Action: Report No Contact (by owner)
+        // Action: Report No Contact / Reset Stale Task (by owner, acceptor, or auto-timeout reset)
         (
           resource.data.status == 'accepted' &&
-          isOwner(resource.data.requesterId) &&
           request.resource.data.status == 'open' &&
           request.resource.data.get('acceptorId', null) == null &&
           request.resource.data.get('acceptorName', null) == null &&
@@ -161,7 +163,7 @@ service cloud.firestore {
           request.resource.data.get('acceptorCompleted', null) == null &&
           request.resource.data.get('acceptorCompletedAt', null) == null &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'status', 'acceptorId', 'acceptorName', 'acceptorContacted', 
+            'status', 'acceptorId', 'acceptorName', 'acceptedAt', 'acceptorContacted', 
             'acceptorContactedAt', 'acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'
           ])
         ) ||
@@ -221,9 +223,9 @@ service cloud.firestore {
 
     // 8. Violation Logs Collection
     match /violation_logs/{logId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.reporterId == request.auth.uid);
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || resource.data.reporterId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && 
-                    request.resource.data.reporterId == request.auth.uid && 
+                    (request.resource.data.reporterId == request.auth.uid || request.resource.data.reporterId == 'system') && 
                     request.resource.data.userId is string &&
                     request.resource.data.taskId is string &&
                     request.resource.data.reason is string;
