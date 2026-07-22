@@ -128,12 +128,12 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     if (!searchQuery) return true;
     const lowerQuery = searchQuery.toLowerCase();
     return (
-      task.content.toLowerCase().includes(lowerQuery) ||
-      (task.location && task.location.toLowerCase().includes(lowerQuery)) ||
-      (task.reward && task.reward.toLowerCase().includes(lowerQuery)) ||
-      (task.taskNum && task.taskNum.includes(lowerQuery)) ||
-      (task.category && task.category.toLowerCase().includes(lowerQuery)) ||
-      (task.region && task.region.toLowerCase().includes(lowerQuery))
+      (task.content && String(task.content).toLowerCase().includes(lowerQuery)) ||
+      (task.location && String(task.location).toLowerCase().includes(lowerQuery)) ||
+      (task.reward && String(task.reward).toLowerCase().includes(lowerQuery)) ||
+      (task.taskNum && String(task.taskNum).toLowerCase().includes(lowerQuery)) ||
+      (task.category && String(task.category).toLowerCase().includes(lowerQuery)) ||
+      (task.region && String(task.region).toLowerCase().includes(lowerQuery))
     );
   });
 
