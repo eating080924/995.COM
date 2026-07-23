@@ -216,8 +216,8 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   if (checkingActiveTask) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-md p-8 flex flex-col items-center justify-center space-y-4 shadow-2xl">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center justify-center space-y-4 shadow-2xl">
           <Loader2 className="animate-spin text-red-500" size={36} />
           <p className="text-sm font-bold text-slate-500">正在檢查您的發布狀態...</p>
         </div>
@@ -227,9 +227,9 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   if (!taskToEdit && hasActiveTask) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100">
-          <div className="p-6 border-b flex justify-between items-center bg-red-50 text-red-650">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
+          <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-red-50 text-red-650 shrink-0">
             <h2 className="text-lg font-black flex items-center gap-2">
               <AlertTriangle size={20} className="text-red-500 shrink-0" />
               <span>發布數量限制</span>
@@ -238,7 +238,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               <X size={20} />
             </button>
           </div>
-          <div className="p-6 text-center space-y-4">
+          <div className="p-4 sm:p-6 text-center space-y-4 overflow-y-auto">
             <p className="text-sm text-slate-600 leading-relaxed">
               為了維護任務市集品質，每個帳號最多同時<b>發布 3 筆活躍中的委託任務</b>。
             </p>
@@ -260,16 +260,16 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-        <div className="p-6 border-b flex justify-between items-center">
-          <h2 className="text-xl font-bold text-gray-900">{taskToEdit ? '編輯任務' : '發布新任務'}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={24} />
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+        <div className="p-4 sm:p-6 border-b flex justify-between items-center shrink-0">
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900">{taskToEdit ? '編輯任務' : '發布新任務'}</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-slate-100 rounded-lg">
+            <X size={22} />
           </button>
         </div>
         
-        <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="p-4 sm:p-6 space-y-3.5 sm:space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1">任務內容</label>
             <textarea
