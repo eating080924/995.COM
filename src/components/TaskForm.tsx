@@ -140,7 +140,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           );
           const activeTasksSnapshot = await getDocs(q);
           if (activeTasksSnapshot.size >= 3) {
-            setSubmitError('您目前已有 3 筆進行中或開放中的委託任務，已達發布上限。');
+            setSubmitError('您目前已有 3 筆進行中或開放中的委託任務，已達發佈上限。');
             setHasActiveTask(true);
             return;
           }
@@ -209,7 +209,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       const isOffline = error?.message?.includes('offline') || !window.navigator.onLine;
       setSubmitError(isOffline 
         ? '您目前似乎處於離線狀態，請檢查您的網路連線後再試。' 
-        : `發布失敗：${error?.message || '未知錯誤'}`
+        : `發佈失敗：${error?.message || '未知錯誤'}`
       );
     }
   };
@@ -219,7 +219,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4">
         <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center justify-center space-y-4 shadow-2xl">
           <Loader2 className="animate-spin text-red-500" size={36} />
-          <p className="text-sm font-bold text-slate-500">正在檢查您的發布狀態...</p>
+          <p className="text-sm font-bold text-slate-500">正在檢查您的發佈狀態...</p>
         </div>
       </div>
     );
@@ -232,7 +232,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-red-50 text-red-650 shrink-0">
             <h2 className="text-lg font-black flex items-center gap-2">
               <AlertTriangle size={20} className="text-red-500 shrink-0" />
-              <span>發布數量限制</span>
+              <span>發佈數量限制</span>
             </h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
               <X size={20} />
@@ -240,7 +240,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           </div>
           <div className="p-4 sm:p-6 text-center space-y-4 overflow-y-auto">
             <p className="text-sm text-slate-600 leading-relaxed">
-              為了維護任務市集品質，每個帳號最多同時<b>發布 3 筆活躍中的委託任務</b>。
+              為了維護任務市集品質，每個帳號最多同時<b>發佈 3 筆活躍中的委託任務</b>。
             </p>
             <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 text-left text-xs text-amber-800 space-y-1.5 font-medium leading-relaxed">
               <p className="font-bold text-amber-900 block">💡 提示與說明：</p>
@@ -263,7 +263,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4">
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[calc(100vh-8rem)] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
         <div className="p-4 sm:p-6 border-b flex justify-between items-center shrink-0">
-          <h2 className="text-lg sm:text-xl font-bold text-gray-900">{taskToEdit ? '編輯任務' : '發布新任務'}</h2>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-900">{taskToEdit ? '編輯任務' : '發佈新任務'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-slate-100 rounded-lg">
             <X size={22} />
           </button>
@@ -389,7 +389,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
             disabled={isSubmitting}
             className="w-full bg-slate-900 text-white py-3 mt-2 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50"
           >
-            {isSubmitting ? '處理中...' : (taskToEdit ? '儲存修改' : '確認發布任務')}
+            {isSubmitting ? '處理中...' : (taskToEdit ? '儲存修改' : '確認發佈任務')}
           </button>
         </form>
       </div>

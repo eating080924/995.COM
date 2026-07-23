@@ -207,7 +207,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         {/* Banner with retro style */}
         <div className="p-6 border-b flex justify-between items-center text-red-600 bg-gradient-to-r from-red-50 to-orange-50">
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black tracking-wider">📢 尬  廣</h2>
+            <h2 className="text-xl font-black tracking-wider">📢 發佈廣播</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 hover:rotate-90 transition-all duration-300 p-1 rounded-full hover:bg-slate-100">
             <X size={20} />
