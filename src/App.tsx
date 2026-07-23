@@ -10,7 +10,7 @@ import { BroadcastMarquee } from './components/BroadcastMarquee';
 import { TaskList } from './components/TaskList';
 import { TaskForm } from './components/TaskForm';
 import { BroadcastForm } from './components/BroadcastForm';
-import { Sparkles, PlusCircle, User as UserIcon, Search, Loader2, Home, Shield } from 'lucide-react';
+import { Sparkles, PlusCircle, User as UserIcon, Search, Loader2, Home, Shield, Radio } from 'lucide-react';
 import { ConfirmDialog } from './components/ConfirmDialog';
 import { performTaskCleanup } from './lib/taskCleanup';
 import { LoginModal } from './components/LoginModal';
@@ -173,6 +173,27 @@ function AppContent() {
       />
       
       <BroadcastMarquee />
+
+      {/* Mobile Broadcast Promotion Banner */}
+      <div className="md:hidden px-4 pt-3 max-w-7xl mx-auto w-full">
+        <div className="bg-slate-900 text-white rounded-2xl p-3 sm:p-3.5 shadow-md border border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-2 bg-amber-400/20 text-amber-400 rounded-xl shrink-0">
+              <Radio size={18} className="animate-pulse" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-slate-100 truncate">推廣您的需求</p>
+              <p className="text-[11px] text-slate-300 truncate">發佈廣播讓全站看見委託！</p>
+            </div>
+          </div>
+          <button
+            onClick={() => requireLogin(() => setShowBroadcastForm(true))}
+            className="shrink-0 px-3.5 py-2 bg-amber-400 text-slate-900 hover:bg-amber-300 rounded-xl text-xs font-black transition-all shadow-sm active:scale-95 whitespace-nowrap"
+          >
+            立即發佈廣播
+          </button>
+        </div>
+      </div>
       
       <main className="flex-1 max-w-7xl mx-auto w-full grid grid-cols-1 md:grid-cols-12 gap-8 p-4 md:p-8 pb-28 md:pb-8">
         {/* Sidebar */}

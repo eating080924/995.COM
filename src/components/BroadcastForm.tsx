@@ -330,7 +330,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
           >
             {isSubmitting ? '廣播中...' : (
               isLimitReached ? '已達額度限制' : (
-                isCooldownActive ? '冷卻中限制發送' : '確認發送廣播 (Demo Free)'
+                isCooldownActive ? '冷卻中限制發送' : '確認發送廣播'
               )
             )}
           </button>
