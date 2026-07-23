@@ -183,7 +183,7 @@ function AppContent() {
             </div>
             <div className="min-w-0">
               <p className="text-xs font-bold text-slate-100 truncate">推廣您的需求</p>
-              <p className="text-[11px] text-slate-300 truncate">發佈廣播讓全站看見委託！</p>
+              <p className="text-[11px] text-slate-300 truncate">發佈廣播讓全站看見！</p>
             </div>
           </div>
           <button
