@@ -216,7 +216,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   if (checkingActiveTask) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4">
         <div className="bg-white rounded-2xl w-full max-w-md p-6 sm:p-8 flex flex-col items-center justify-center space-y-4 shadow-2xl">
           <Loader2 className="animate-spin text-red-500" size={36} />
           <p className="text-sm font-bold text-slate-500">正在檢查您的發布狀態...</p>
@@ -227,8 +227,8 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   if (!taskToEdit && hasActiveTask) {
     return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-        <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md max-h-[calc(100vh-8rem)] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
           <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-red-50 text-red-650 shrink-0">
             <h2 className="text-lg font-black flex items-center gap-2">
               <AlertTriangle size={20} className="text-red-500 shrink-0" />
@@ -260,8 +260,8 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[calc(100vh-8rem)] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl">
         <div className="p-4 sm:p-6 border-b flex justify-between items-center shrink-0">
           <h2 className="text-lg sm:text-xl font-bold text-gray-900">{taskToEdit ? '編輯任務' : '發布新任務'}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-slate-100 rounded-lg">

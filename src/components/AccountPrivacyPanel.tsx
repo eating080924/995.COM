@@ -631,7 +631,7 @@ export function AccountPrivacyPanel() {
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" id="delete-confirmation-modal">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 pb-24 sm:p-4" id="delete-confirmation-modal">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => !isDeleting && setShowConfirmModal(false)} />
           <div className="relative bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden z-20">
             {deletionStatus === 'success' ? (

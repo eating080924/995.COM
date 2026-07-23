@@ -202,8 +202,8 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
   const isButtonDisabled = isSubmitting || checking || isLimitReached || isCooldownActive;
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div className="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-slate-100">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] flex items-center justify-center p-3 pb-24 sm:p-4 animate-fade-in">
+      <div className="bg-white rounded-3xl w-full max-w-md max-h-[calc(100vh-8rem)] sm:max-h-[85vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
         {/* Banner with retro style */}
         <div className="p-6 border-b flex justify-between items-center text-red-600 bg-gradient-to-r from-red-50 to-orange-50">
           <div className="flex items-center gap-2">
