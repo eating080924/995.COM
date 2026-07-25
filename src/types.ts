@@ -40,6 +40,7 @@ export interface Broadcast {
   taskNum?: string;
   category?: string;
   region?: string;
+  vip?: boolean;
 }
 
 export interface UserProfile {

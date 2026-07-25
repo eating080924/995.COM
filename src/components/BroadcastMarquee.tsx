@@ -4,7 +4,7 @@ import { db } from '../lib/firebase';
 import { Broadcast } from '../types';
 import { formatTimeAgo } from '../lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
-import { Megaphone, ChevronLeft, ChevronRight, List, Link, ExternalLink, Clock, X } from 'lucide-react';
+import { Megaphone, ChevronLeft, ChevronRight, List, Link, ExternalLink, Clock, X, Crown } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export function BroadcastMarquee() {
@@ -152,17 +152,24 @@ export function BroadcastMarquee() {
         onMouseLeave={() => { if (hasHoverSupport) setIsPaused(false); }}
         className={cn(
           "relative py-3 shadow-xl overflow-hidden transition-all duration-500 border-b",
-          currentItem 
-            ? "bg-gradient-to-r from-slate-950 via-red-950 to-slate-950 border-red-500/30 shadow-[0_4px_25px_rgba(239,68,68,0.15)]" 
-            : "bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-slate-800 shadow-[0_4px_15px_rgba(0,0,0,0.1)]"
+          currentItem?.vip
+            ? "bg-gradient-to-r from-amber-950/90 via-yellow-950/80 to-amber-950/90 border-amber-400/60 shadow-[0_0_30px_rgba(245,158,11,0.25)]"
+            : currentItem 
+              ? "bg-gradient-to-r from-slate-950 via-red-950 to-slate-950 border-red-500/30 shadow-[0_4px_25px_rgba(239,68,68,0.15)]" 
+              : "bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border-slate-800 shadow-[0_4px_15px_rgba(0,0,0,0.1)]"
         )}
       >
-        {/* Animated glowing accent line at the bottom */}
+        {/* Animated glowing accent lines */}
+        {currentItem?.vip && (
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-amber-300 to-transparent animate-pulse shadow-[0_0_10px_#f59e0b]" />
+        )}
         <div className={cn(
           "absolute bottom-0 left-0 right-0 h-[2px] transition-all duration-500 bg-gradient-to-r",
-          currentItem 
-            ? "from-transparent via-red-500 to-transparent animate-pulse" 
-            : "from-transparent via-blue-500/40 to-transparent"
+          currentItem?.vip
+            ? "from-transparent via-amber-400 to-transparent animate-pulse shadow-[0_0_10px_#f59e0b]"
+            : currentItem 
+              ? "from-transparent via-red-500 to-transparent animate-pulse" 
+              : "from-transparent via-blue-500/40 to-transparent"
         )} />
 
         <div className="max-w-7xl mx-auto px-4 flex items-center justify-between gap-4 relative z-10">
@@ -173,23 +180,34 @@ export function BroadcastMarquee() {
             <span className="relative flex h-2 w-2">
               <span className={cn(
                 "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                currentItem ? "bg-red-400" : "bg-blue-400"
+                currentItem?.vip ? "bg-amber-300" : (currentItem ? "bg-red-400" : "bg-blue-400")
               )}></span>
               <span className={cn(
                 "relative inline-flex rounded-full h-2 w-2",
-                currentItem ? "bg-red-500" : "bg-blue-500"
+                currentItem?.vip ? "bg-amber-400" : (currentItem ? "bg-red-500" : "bg-blue-500")
               )}></span>
             </span>
 
-            {/* Broadcast Tag - High Contrast Yellow Badge with Retro Shadow */}
+            {/* Broadcast Tag - High Contrast Badge */}
             <div className={cn(
-              "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold uppercase tracking-wider transition-all shadow-sm",
-              currentItem 
-                ? "bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 border border-amber-300" 
-                : "bg-slate-800 text-slate-300 border border-slate-700"
+              "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider transition-all shadow-sm",
+              currentItem?.vip
+                ? "bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-slate-950 border border-yellow-200 shadow-[0_0_15px_rgba(251,191,36,0.5)] animate-pulse"
+                : currentItem 
+                  ? "bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 border border-amber-300" 
+                  : "bg-slate-800 text-slate-300 border border-slate-700"
             )}>
-              <Megaphone size={13} className={cn("fill-current", currentItem && "animate-bounce")} />
-              <span>廣  播</span>
+              {currentItem?.vip ? (
+                <>
+                  <Crown size={14} className="fill-slate-950 stroke-slate-950 animate-bounce shrink-0" />
+                  <span>廣  播</span>
+                </>
+              ) : (
+                <>
+                  <Megaphone size={13} className={cn("fill-current", currentItem && "animate-bounce")} />
+                  <span>廣  播</span>
+                </>
+              )}
             </div>
           </div>
           
@@ -212,13 +230,18 @@ export function BroadcastMarquee() {
               >
                 <span className={cn(
                   "font-bold text-sm tracking-wide line-clamp-1 transition-all duration-300 flex items-center gap-2",
-                  currentItem 
-                    ? "text-yellow-200 group-hover/content:text-white drop-shadow-[0_2px_8px_rgba(253,224,71,0.2)] font-black text-sm md:text-base" 
-                    : "text-slate-200"
+                  currentItem?.vip
+                    ? "text-amber-100 group-hover/content:text-white drop-shadow-[0_2px_12px_rgba(251,191,36,0.4)] font-black text-sm md:text-base"
+                    : currentItem 
+                      ? "text-yellow-200 group-hover/content:text-white drop-shadow-[0_2px_8px_rgba(253,224,71,0.2)] font-black text-sm md:text-base" 
+                      : "text-slate-200"
                 )}>
                   {currentItem ? currentItem.content : DEFAULT_MESSAGE}
                   {currentItem?.taskId && (
-                    <span className="text-[10px] text-red-400 font-extrabold underline underline-offset-2 ml-1.5 opacity-80 group-hover/content:opacity-100 flex items-center gap-0.5 shrink-0">
+                    <span className={cn(
+                      "text-[10px] font-extrabold underline underline-offset-2 ml-1.5 opacity-80 group-hover/content:opacity-100 flex items-center gap-0.5 shrink-0",
+                      currentItem?.vip ? "text-amber-300" : "text-red-400"
+                    )}>
                       <Link size={10} />
                       點擊直達委託卡
                     </span>
@@ -226,8 +249,17 @@ export function BroadcastMarquee() {
                 </span>
                 
                 {currentItem && (
-                  <span className="text-[10px] md:text-xs text-red-300 bg-red-950/40 border border-red-900/40 px-2 py-0.5 rounded-md font-semibold shrink-0 hidden lg:inline-flex items-center gap-1.5">
-                    <span className="w-1 h-1 rounded-full bg-red-400 animate-ping" />
+                  <span className={cn(
+                    "text-[10px] md:text-xs px-2 py-0.5 rounded-md font-semibold shrink-0 hidden lg:inline-flex items-center gap-1.5 border",
+                    currentItem?.vip
+                      ? "text-amber-200 bg-amber-950/70 border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.2)] font-bold"
+                      : "text-red-300 bg-red-950/40 border-red-900/40"
+                  )}>
+                    <span className={cn(
+                      "w-1 h-1 rounded-full animate-ping",
+                      currentItem?.vip ? "bg-amber-300" : "bg-red-400"
+                    )} />
+                    {currentItem.vip && <Crown size={11} className="text-amber-400 fill-amber-400 shrink-0" />}
                     由 {currentItem.userName || '匿名'} 廣播 ({formatTimeAgo(currentItem.createdAt?.toDate ? currentItem.createdAt.toDate() : new Date())})
                   </span>
                 )}
@@ -278,10 +310,12 @@ export function BroadcastMarquee() {
         
         {/* Atmospheric highlight glow in background */}
         <div className={cn(
-          "absolute inset-0 opacity-15 pointer-events-none transition-all duration-500",
-          currentItem 
-            ? "bg-[radial-gradient(circle_at_50%_50%,_rgba(239,68,68,0.2),_transparent_60%)]" 
-            : "bg-[radial-gradient(circle_at_50%_50%,_rgba(59,130,246,0.1),_transparent_60%)]"
+          "absolute inset-0 opacity-20 pointer-events-none transition-all duration-500",
+          currentItem?.vip
+            ? "bg-[radial-gradient(circle_at_50%_50%,_rgba(245,158,11,0.3),_transparent_65%)]"
+            : currentItem 
+              ? "bg-[radial-gradient(circle_at_50%_50%,_rgba(239,68,68,0.2),_transparent_60%)]" 
+              : "bg-[radial-gradient(circle_at_50%_50%,_rgba(59,130,246,0.1),_transparent_60%)]"
         )} />
       </div>
 
@@ -334,18 +368,28 @@ export function BroadcastMarquee() {
                         }
                       }}
                       className={cn(
-                        "p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2.5 text-xs text-left",
-                        activeIndex === idx 
-                          ? "bg-slate-900 border-red-500/40 text-yellow-100 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
-                          : "bg-slate-950/40 border-slate-900 hover:border-slate-800 text-slate-300"
+                        "p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between gap-2.5 text-xs text-left relative overflow-hidden",
+                        b.vip
+                          ? (activeIndex === idx 
+                              ? "bg-gradient-to-br from-amber-950/90 via-slate-900 to-amber-950/70 border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.35)] text-amber-100" 
+                              : "bg-gradient-to-br from-amber-950/40 via-slate-950 to-slate-900 border-amber-500/50 hover:border-amber-400/80 text-amber-200/90 shadow-[0_0_12px_rgba(245,158,11,0.15)]")
+                          : (activeIndex === idx 
+                              ? "bg-slate-900 border-red-500/40 text-yellow-100 shadow-[0_0_15px_rgba(239,68,68,0.15)]"
+                              : "bg-slate-950/40 border-slate-900 hover:border-slate-800 text-slate-300")
                       )}
                     >
-                      <div className="font-bold leading-relaxed break-words line-clamp-2">
+                      {b.vip && (
+                        <div className="absolute top-0 right-0 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 text-[9px] font-black rounded-bl-lg flex items-center gap-0.5 shadow-sm">
+                          <Crown size={10} className="fill-slate-950" />
+                          <span>VIP</span>
+                        </div>
+                      )}
+                      <div className={cn("font-bold leading-relaxed break-words line-clamp-2", b.vip && "pr-8 text-amber-100")}>
                         {b.content}
                       </div>
                       
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-900 pt-2 mt-1">
-                        <span className="font-semibold text-slate-400">
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 border-t border-slate-900/80 pt-2 mt-1">
+                        <span className={cn("font-semibold", b.vip ? "text-amber-300" : "text-slate-400")}>
                           {b.userName || '匿名'}
                         </span>
                         
@@ -356,7 +400,12 @@ export function BroadcastMarquee() {
                           </span>
                           
                           {b.taskId && (
-                            <span className="px-1.5 py-0.5 bg-red-950/80 hover:bg-red-900 text-red-400 border border-red-900/30 rounded-md font-extrabold text-[9px] flex items-center gap-0.5 transition-colors">
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded-md font-extrabold text-[9px] flex items-center gap-0.5 transition-colors border",
+                              b.vip
+                                ? "bg-amber-950/90 text-amber-300 border-amber-500/40"
+                                : "bg-red-950/80 hover:bg-red-900 text-red-400 border-red-900/30"
+                            )}>
                               <ExternalLink size={8} />
                               連動中
                             </span>
@@ -391,47 +440,90 @@ export function BroadcastMarquee() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -20 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-[0_20px_50px_rgba(239,68,68,0.35)] border border-red-500/30 overflow-hidden pointer-events-auto"
+              className={cn(
+                "relative w-full max-w-lg text-white rounded-3xl p-6 overflow-hidden pointer-events-auto border transition-all duration-500",
+                screenCenterBroadcast.vip
+                  ? "bg-gradient-to-b from-amber-950/95 via-slate-900 to-slate-950 shadow-[0_0_70px_rgba(245,158,11,0.45)] border-amber-400/80 border-2"
+                  : "bg-gradient-to-b from-slate-900 to-slate-950 shadow-[0_20px_50px_rgba(239,68,68,0.35)] border-red-500/30"
+              )}
             >
               {/* Close Button "X" */}
               <button 
                 onClick={() => setScreenCenterBroadcast(null)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-white hover:bg-white/15 p-1.5 rounded-full transition-all active:scale-90"
+                className="absolute top-4 right-4 text-slate-400 hover:text-white hover:bg-white/15 p-1.5 rounded-full transition-all active:scale-90 z-20"
                 title="關閉提示"
               >
                 <X size={15} />
               </button>
 
               {/* Animated ambient pulse backgrounds */}
-              <div className="absolute -top-10 -left-10 w-40 h-40 bg-red-600/10 rounded-full blur-3xl animate-pulse" />
-              <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-amber-500/10 rounded-full blur-3xl animate-pulse" />
+              <div className={cn(
+                "absolute -top-10 -left-10 w-44 h-44 rounded-full blur-3xl animate-pulse",
+                screenCenterBroadcast.vip ? "bg-amber-400/25" : "bg-red-600/10"
+              )} />
+              <div className={cn(
+                "absolute -bottom-10 -right-10 w-44 h-44 rounded-full blur-3xl animate-pulse",
+                screenCenterBroadcast.vip ? "bg-yellow-400/25" : "bg-amber-500/10"
+              )} />
               
               {/* 3-second animated countdown timing indicator */}
               <motion.div 
                 initial={{ width: "100%" }}
                 animate={{ width: "0%" }}
                 transition={{ duration: 3, ease: "linear" }}
-                className="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-amber-400 via-red-500 to-amber-400"
+                className={cn(
+                  "absolute bottom-0 left-0 h-1 bg-gradient-to-r",
+                  screenCenterBroadcast.vip 
+                    ? "from-yellow-300 via-amber-400 to-yellow-300 shadow-[0_0_8px_#facc15]" 
+                    : "from-amber-400 via-red-500 to-amber-400"
+                )}
               />
 
-              <div className="flex flex-col items-center text-center space-y-4">
-                {/* Yellow/Amber Badge */}
-                <div className="flex items-center gap-2 bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider shadow-[0_4px_12px_rgba(245,158,11,0.3)] animate-bounce">
-                  <Megaphone size={14} className="fill-current" />
-                  <span>尬廣</span>
+              <div className="flex flex-col items-center text-center space-y-4 relative z-10">
+                {/* Badge */}
+                <div className={cn(
+                  "flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider animate-bounce",
+                  screenCenterBroadcast.vip
+                    ? "bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-500 text-slate-950 shadow-[0_0_20px_rgba(245,158,11,0.6)] border border-yellow-200"
+                    : "bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 shadow-[0_4px_12px_rgba(245,158,11,0.3)]"
+                )}>
+                  {screenCenterBroadcast.vip ? (
+                    <>
+                      <Crown size={15} className="fill-slate-950 stroke-slate-950 shrink-0" />
+                      <span>廣  播</span>
+                    </>
+                  ) : (
+                    <>
+                      <Megaphone size={14} className="fill-current" />
+                      <span>廣  播</span>
+                    </>
+                  )}
                 </div>
 
                 {/* Broadcast Content */}
-                <p className="text-base md:text-lg font-black text-yellow-100 tracking-wide leading-relaxed px-2 break-words">
+                <p className={cn(
+                  "text-base md:text-lg font-black tracking-wide leading-relaxed px-2 break-words",
+                  screenCenterBroadcast.vip 
+                    ? "text-amber-100 drop-shadow-[0_2px_12px_rgba(251,191,36,0.4)]" 
+                    : "text-yellow-100"
+                )}>
                   「 {screenCenterBroadcast.content} 」
                 </p>
 
                 {/* Publisher Details & Action */}
                 <div className="flex flex-col items-center gap-2 text-slate-400 text-xs justify-center w-full">
                   <div className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping" />
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full animate-ping",
+                      screenCenterBroadcast.vip ? "bg-amber-400" : "bg-green-500"
+                    )} />
                     <span>廣播發佈者：</span>
-                    <span className="font-bold text-slate-200">{screenCenterBroadcast.userName || '匿名'}</span>
+                    <span className={cn(
+                      "font-bold",
+                      screenCenterBroadcast.vip ? "text-amber-200" : "text-slate-200"
+                    )}>
+                      {screenCenterBroadcast.userName || '匿名'}
+                    </span>
                   </div>
                   
                   {/* Option to quickly disable future popups */}

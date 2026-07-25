@@ -4,7 +4,7 @@ import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs }
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
-import { X, CreditCard, ShieldAlert, Timer, CheckCircle, Link } from 'lucide-react';
+import { X, CreditCard, ShieldAlert, Timer, CheckCircle, Link, Crown } from 'lucide-react';
 import { isUserUnlimited } from '../config/unlimitedUsers';
 import { Task } from '../types';
 
@@ -22,6 +22,7 @@ interface BroadcastFormProps {
 interface FormData {
   content: string;
   selectedTaskId?: string;
+  isVip?: boolean;
 }
 
 export function BroadcastForm({ onClose }: BroadcastFormProps) {
@@ -183,7 +184,8 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         activeUntil: Timestamp.fromDate(expiry),
         createdAt: serverTimestamp(),
         taskId: data.selectedTaskId || null,
-        taskNum: selectedTask ? selectedTask.taskNum : null
+        taskNum: selectedTask ? selectedTask.taskNum : null,
+        vip: Boolean(data.isVip)
       });
       onClose();
     } catch (error: any) {
@@ -321,6 +323,23 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
               </p>
             </div>
           )}
+
+          {/* VIP Broadcast Option (Temporarily commented out for future testing)
+          <div className="pt-1">
+            <label className="flex items-center gap-2.5 cursor-pointer select-none bg-gradient-to-r from-amber-50 to-yellow-50/80 hover:from-amber-100/80 hover:to-yellow-100 p-3 rounded-xl border border-amber-300/80 transition-all shadow-sm">
+              <input
+                type="checkbox"
+                {...register('isVip')}
+                disabled={isButtonDisabled}
+                className="w-4 h-4 accent-amber-500 rounded cursor-pointer"
+              />
+              <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-950">
+                <Crown size={16} className="text-amber-500 fill-amber-400 shrink-0" />
+                <span>啟用 VIP 尊榮廣播 (專屬金色微光與流光特效)</span>
+              </div>
+            </label>
+          </div>
+          */}
 
           {submitError && (
             <div className="bg-red-50 text-red-700 text-xs font-bold p-3.5 rounded-xl border border-red-100 flex items-start gap-2">
