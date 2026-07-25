@@ -3,8 +3,8 @@
  * 
  * Users configured here will NOT be subject to:
  * 1. Task posting limit (currently capped at 1 active task per user)
- * 2. Broadcast cooldown limit (currently 30 seconds)
- * 3. Broadcast hourly limit (currently 10 broadcasts per hour)
+ * 2. Broadcast cooldown limit (currently 10 minutes)
+ * 3. Broadcast daily limit (currently 3 broadcasts per day, resetting at 00:00)
  * 
  * You can specify these exempt users by their unique Firebase Auth UID or by their Email Address.
  */

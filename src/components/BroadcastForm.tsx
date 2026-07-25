@@ -71,8 +71,11 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
       const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
       
       const now = Date.now();
-      const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-      const ONE_DAY_MS = 4 * 60 * 60 * 1000; // 4 hour reset
+      const COOLDOWN_MS = 10 * 60 * 1000; // 10 min cooldown (600,000 ms)
+      
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      const startOfTodayMs = startOfToday.getTime();
       
       let latestTime = 0;
       let dayCount = 0;
@@ -82,7 +85,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         if (t > latestTime) {
           latestTime = t;
         }
-        if (now - t < ONE_DAY_MS) {
+        if (t >= startOfTodayMs) {
           dayCount++;
         }
       });
@@ -136,8 +139,11 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
         const userBroadcasts = querySnapshot.docs.map(doc => doc.data());
         
         const now = Date.now();
-        const COOLDOWN_MS = 30 * 1000; // 30 sec cooldown
-        const ONE_DAY_MS = 4 * 60 * 60 * 1000; // 4 hour reset
+        const COOLDOWN_MS = 10 * 60 * 1000; // 10 min cooldown
+        
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const startOfTodayMs = startOfToday.getTime();
         
         let latestTime = 0;
         let dayCount = 0;
@@ -147,7 +153,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
           if (t > latestTime) {
             latestTime = t;
           }
-          if (now - t < ONE_DAY_MS) {
+          if (t >= startOfTodayMs) {
             dayCount++;
           }
         });
@@ -159,8 +165,8 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
           throw new ValidationError(`請勿頻繁發送廣播！冷卻中，請等待 ${remMin} 分 ${remSec} 秒後重試。`);
         }
 
-        if (dayCount >= 10) {
-          throw new ValidationError('您已達到每日發布上限 (1 小時內最多 10 則)。');
+        if (dayCount >= 3) {
+          throw new ValidationError('您已達到每日免費廣播上限 (每日最多 3 則，於 00:00 重置)。');
         }
       }
 
@@ -197,7 +203,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
   };
 
   const isUnlimited = isUserUnlimited(user?.uid, user?.email);
-  const isLimitReached = !isUnlimited && quotaUsed >= 10;
+  const isLimitReached = !isUnlimited && quotaUsed >= 3;
   const isCooldownActive = !isUnlimited && cooldownRemaining > 0;
   const isButtonDisabled = isSubmitting || checking || isLimitReached || isCooldownActive;
 
@@ -229,7 +235,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   ? 'bg-red-50 border-red-100 text-red-700' 
                   : (checking ? 'bg-slate-100/50 border-slate-100 animate-pulse' : 'bg-green-50/50 border-green-100/80 text-green-800')
               }`}>
-                <span className="text-[10px] text-slate-500 font-bold">4H 額度限制</span>
+                <span className="text-[10px] text-slate-500 font-bold">每日額度限制</span>
                 {checking ? (
                   <span className="font-extrabold mt-1">檢查中...</span>
                 ) : isUnlimited ? (
@@ -238,7 +244,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
                   </span>
                 ) : (
                   <span className="font-extrabold text-sm mt-0.5 flex items-center gap-1">
-                    {quotaUsed} / 10 則
+                    {quotaUsed} / 3 則
                     {isLimitReached && <ShieldAlert size={14} className="text-red-500 animate-bounce" />}
                   </span>
                 )}
@@ -274,7 +280,7 @@ export function BroadcastForm({ onClose }: BroadcastFormProps) {
             <p className="text-[10px] text-slate-400 leading-relaxed font-medium">
               {isUnlimited 
                 ? "您的帳號已啟用免限制特權，發送廣播無冷卻時間且無次數上限。" 
-                : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 30 秒鐘，且每人每 4 小時限額 10 則。"}
+                : "* 為防止洗板與惡意廣告，每次廣播間隔需冷卻 10 分鐘，且每人每日限額 3 則 (於每日 00:00 重置)。"}
             </p>
           </div>
 
