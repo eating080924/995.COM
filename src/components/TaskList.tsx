@@ -42,7 +42,7 @@ const CATEGORY_META: Record<string, { icon: React.ComponentType<any>; color: str
   '文書處理': { icon: FileText, color: 'text-violet-500', bgColor: 'bg-violet-50', borderColor: 'border-violet-100' },
   '搬家協助': { icon: Truck, color: 'text-orange-500', bgColor: 'bg-orange-50', borderColor: 'border-orange-100' },
   '買賣交換': { icon: Tag, color: 'text-indigo-500', bgColor: 'bg-indigo-50', borderColor: 'border-indigo-100' },
-  '工作機會': { icon: Briefcase, color: 'text-teal-500', bgColor: 'bg-teal-50', borderColor: 'border-teal-100' },
+  '尋求幫手': { icon: Briefcase, color: 'text-teal-500', bgColor: 'bg-teal-50', borderColor: 'border-teal-100' },
   '其他': { icon: HelpCircle, color: 'text-slate-500', bgColor: 'bg-slate-50', borderColor: 'border-slate-100' }
 };
 
