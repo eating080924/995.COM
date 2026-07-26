@@ -48,6 +48,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
   // ⚡ 防卡死自動超時驗收結案 (48小時無回應自動審核)
   const triggerAutoCompletion = async () => {
+    if (!user) return;
     try {
       const taskRef = doc(db, 'tasks', task.id);
       await updateDoc(taskRef, {
@@ -79,11 +80,17 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       }
     } catch (err) {
       console.error('Auto completion failed:', err);
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
+      } catch (e) {
+        console.error('Firestore operation failed:', e);
+      }
     }
   };
 
   // ⚡ 防卡死自動 24 小時無聯繫重開與記錄違規
   const triggerAutoNoContactReset = async () => {
+    if (!user) return;
     try {
       const originalAcceptorId = task.acceptorId;
       if (!originalAcceptorId) return;
@@ -162,6 +169,11 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       }
     } catch (err) {
       console.error('Auto no-contact reset failed:', err);
+      try {
+        handleFirestoreError(err, OperationType.UPDATE, `tasks/${task.id}`);
+      } catch (e) {
+        console.error('Firestore operation failed:', e);
+      }
     }
   };
 
