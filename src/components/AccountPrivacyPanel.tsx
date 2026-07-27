@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { deleteAllUserAppData } from '../lib/userDeletion';
+import { requestSoftAccountDeletion } from '../lib/userDeletion';
 import { 
   Shield, ShieldAlert, FileText, CheckCircle, Trash2, Mail, Info, Loader2, Settings,
-  Award, MapPin, Layers, Star, Check, Sparkles, Trophy, MessageSquare
+  Award, MapPin, Layers, Star, Check, Sparkles, Trophy, MessageSquare, AlertCircle, Clock
 } from 'lucide-react';
 import { db } from '../lib/firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
@@ -18,6 +18,7 @@ export function AccountPrivacyPanel() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
   const [deletionStatus, setDeletionStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [deletionErrorMsg, setDeletionErrorMsg] = useState<string | null>(null);
 
   // App settings and profile states
   const [profile, setProfile] = useState<any>(null);
@@ -159,27 +160,30 @@ export function AccountPrivacyPanel() {
   };
 
   const handleDeleteAccount = async () => {
-    if (confirmInput !== '確認刪除') return;
+    if (confirmInput !== '確認刪除' || !user) return;
     
     setIsDeleting(true);
     setDeletionStatus('idle');
+    setDeletionErrorMsg(null);
     
     try {
-      const success = await deleteAllUserAppData(user.uid);
+      const result = await requestSoftAccountDeletion(user.uid);
       
-      if (success) {
+      if (result.success) {
         setDeletionStatus('success');
         setTimeout(async () => {
           await logout();
           window.location.reload();
-        }, 2500);
+        }, 3500);
       } else {
         setDeletionStatus('error');
+        setDeletionErrorMsg(result.message);
         setIsDeleting(false);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Account deletion error:', error);
       setDeletionStatus('error');
+      setDeletionErrorMsg(error?.message || '帳號註銷程序發生未預期錯誤，請重新整理後再試。');
       setIsDeleting(false);
     }
   };
@@ -604,27 +608,33 @@ export function AccountPrivacyPanel() {
         </div>
       </div>
 
-      {/* 5. Irreversible account delete (Preserving original deletion code) */}
-      <div className="bg-red-50/10 rounded-3xl border border-red-100 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-        <div className="md:col-span-7 space-y-1.5">
+      {/* 5. Account Delete with 30-day Grace Period & Risk Control */}
+      <div className="bg-red-50/20 rounded-3xl border border-red-100 p-6 md:p-8 grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+        <div className="md:col-span-7 space-y-2">
           <h3 className="text-sm font-black text-red-800 uppercase flex items-center gap-1.5">
             <Trash2 size={14} className="text-red-500" />
-            <span>個人數據自主刪除</span>
+            <span>個人數據自主註銷（符合 GDPR / 個資法合規）</span>
           </h3>
           <p className="text-xs text-slate-500 leading-relaxed">
-            若您不再使用委託板，我們提供極為徹底的一鍵數據銷毀。點擊後系統會<b>永久、不可逆</b>地抹除您的個人檔案、發布的所有任務以及廣播紀錄。
+            若您不再使用委託板，我們提供合規的帳號註銷程序。申請後將進入 <b>30 天數據凍結緩衝期</b>，您的個人檔案與發布的任務會立即對外隱藏，緩衝期滿後自動清空敏感個人資料。
           </p>
+          <div className="flex items-center gap-2 text-[11px] font-bold text-slate-400">
+            <Clock size={12} className="text-amber-500" />
+            <span>包含 30 天數據凍結緩衝期與獨立不可篡改審計日誌 (Audit Logs)</span>
+          </div>
         </div>
         <div className="md:col-span-5 flex justify-end">
           <button
             onClick={() => {
               setConfirmInput('');
+              setDeletionStatus('idle');
+              setDeletionErrorMsg(null);
               setShowConfirmModal(true);
             }}
             disabled={isDeleting}
             className="w-full sm:w-auto px-5 py-3 bg-red-50 border border-red-200 hover:bg-red-500 hover:text-white rounded-xl text-xs font-black tracking-wider text-red-600 shadow-sm transition-all active:scale-95 disabled:opacity-50"
           >
-            永久刪除帳號與所有委託資料
+            註銷帳號與申請數據刪除
           </button>
         </div>
       </div>
@@ -639,9 +649,10 @@ export function AccountPrivacyPanel() {
                 <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-150 shadow-inner animate-bounce">
                   <CheckCircle size={32} />
                 </div>
-                <h3 className="text-lg font-black text-slate-800">資料已徹底銷毀</h3>
-                <p className="text-sm text-slate-500 leading-relaxed">
-                  您的帳號檔案、電子郵件以及您曾經發佈過的所有任務紀錄已自 Firebase 資料庫中<b>永久、不可逆</b>地安全抹除。<br />我們將為您重新載入首頁...
+                <h3 className="text-lg font-black text-slate-800">帳號註銷已成功申請</h3>
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  您的帳號已進入 <b>30 天數據凍結緩衝期</b>。<br />在此期間您的個人檔案與歷史任務已對外全面隱藏。緩衝期滿後系統將自動完成敏感個資去識別化。<br /><br />
+                  <span className="text-xs text-slate-400">系統即將為您安全登出並返回首頁...</span>
                 </p>
               </div>
             ) : (
@@ -651,26 +662,27 @@ export function AccountPrivacyPanel() {
                     <ShieldAlert size={24} />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 leading-tight">確認刪除帳號與數據？</h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Irreversible Data Purge Alert</p>
+                    <h3 className="text-lg font-black text-slate-900 leading-tight">確認申請註銷帳號與數據凍結？</h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">30-Day Grace Period & Audit Policy</p>
                   </div>
                 </div>
 
                 <div className="space-y-3.5 text-xs text-slate-600 leading-relaxed">
-                  <p className="font-semibold text-slate-700">這是一項「無法還原」的永久刪洗數據操作：</p>
-                  <ul className="list-disc pl-5 space-y-1.5 text-slate-500 font-medium">
-                    <li>您在平台發佈的所有委託任務皆會徹底遭清空刪除。</li>
-                    <li>您的 Firebase 帳號文件 (Users collection) 會隨即下線銷毀。</li>
-                    <li>關聯的所有社群登入資訊、歷史快取也將同步徹底拔除登出。</li>
+                  <p className="font-semibold text-slate-700">依據風控與隱私保護機制，註銷流程如下：</p>
+                  <ul className="list-disc pl-5 space-y-2 text-slate-500 font-medium">
+                    <li><b>30 天數據凍結緩衝期：</b>您的個人檔案與任務會即刻對外隱藏，緩衝期間資料保留於系統資料庫以備查核。</li>
+                    <li><b>不可篡改審計日誌：</b>為防止違規詐騙與規避處罰，帳號之違規標籤與紀錄特徵將獨立永久保存於唯讀稽核日誌 (Audit Logs)。</li>
+                    <li><b>阻斷安全機制：</b>若您尚有「進行中/爭議待處理」之任務或處於「停權審查」狀態，系統將強制阻斷註銷。</li>
                   </ul>
-                  <p className="text-[11px] text-red-500 font-bold bg-red-50 border border-red-100 px-3 py-2 rounded-xl">
-                    ⚠️ 注意：我們沒有任何還原機制，數據被銷毀後，任何人（包含管理團隊）皆無法為您恢復任何資料。
+                  <p className="text-[11px] text-amber-700 font-bold bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl flex items-center gap-1.5">
+                    <Clock size={14} className="text-amber-600 shrink-0" />
+                    <span>30 天緩衝期滿後，系統將自動完成敏感個人資料去識別化作業。</span>
                   </p>
                 </div>
 
                 <div className="space-y-2">
                   <label className="text-xs font-black text-slate-700 block">
-                    為防止不小心點擊，請在下方輸入 <span className="text-red-500">確認刪除</span> 以確認：
+                    請在下方輸入 <span className="text-red-500">確認刪除</span> 以執行註銷：
                   </label>
                   <input
                     type="text"
@@ -683,9 +695,15 @@ export function AccountPrivacyPanel() {
                 </div>
 
                 {deletionStatus === 'error' && (
-                  <p className="text-xs text-red-500 font-bold text-center">
-                    ⛔ 資料刪除失敗！請確認您的網路狀況或重新登入後再次嘗試。
-                  </p>
+                  <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-xs font-bold text-red-700 space-y-1">
+                    <div className="flex items-center gap-1.5 text-red-800 font-black">
+                      <AlertCircle size={15} />
+                      <span>無法執行帳號註銷</span>
+                    </div>
+                    <p className="leading-relaxed pl-5">
+                      {deletionErrorMsg || '資料刪除失敗！請確認您的網路狀況或聯繫客服處理。'}
+                    </p>
+                  </div>
                 )}
 
                 <div className="flex gap-3 pt-2">
@@ -694,7 +712,7 @@ export function AccountPrivacyPanel() {
                     disabled={isDeleting}
                     className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition-colors"
                   >
-                    保留資料 (取消)
+                    保留帳號 (取消)
                   </button>
                   <button
                     onClick={handleDeleteAccount}
@@ -704,10 +722,10 @@ export function AccountPrivacyPanel() {
                     {isDeleting ? (
                       <>
                         <Loader2 className="animate-spin" size={14} />
-                        <span>正在徹底銷毀數據...</span>
+                        <span>正在辦理數據凍結...</span>
                       </>
                     ) : (
-                      <span>確認刪除我的所有數據</span>
+                      <span>確認辦理帳號註銷</span>
                     )}
                   </button>
                 </div>

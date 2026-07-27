@@ -40,7 +40,8 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
             'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
-            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount'
+            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount',
+            'isDeleted', 'status', 'deletedAt', 'deleteScheduledAt', 'deletionReason'
           ])
         ) ||
         (
@@ -229,6 +230,13 @@ service cloud.firestore {
                     request.resource.data.userId is string &&
                     request.resource.data.taskId is string &&
                     request.resource.data.reason is string;
+    }
+
+    // 9. Immutable Audit Logs Collection (For account deletion and risk tracking)
+    match /audit_logs/{logId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // Immutable append-only
     }
   }
 }
