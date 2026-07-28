@@ -126,7 +126,14 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     }
 
     if (!searchQuery) return true;
-    const lowerQuery = searchQuery.toLowerCase();
+    const lowerQuery = searchQuery.toLowerCase().trim();
+
+    // Match status "開放中" / "open" keywords
+    const isOpenStatusQuery = lowerQuery === '開放中' || lowerQuery === 'open' || lowerQuery === '開放';
+    if (isOpenStatusQuery) {
+      return task.status === 'open';
+    }
+
     return (
       (task.content && String(task.content).toLowerCase().includes(lowerQuery)) ||
       (task.location && String(task.location).toLowerCase().includes(lowerQuery)) ||

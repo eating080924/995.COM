@@ -98,10 +98,14 @@ function AppContent() {
       setCategoryFilter('');
       setRegionFilter('');
 
-      // 3. Scroll to the element after a short timeout to let the state update and render
-      setTimeout(() => {
+      // 3. Poll for the task element and scroll directly to it once mounted
+      let attempts = 0;
+      const maxAttempts = 30; // 3 seconds total
+      const interval = setInterval(() => {
+        attempts++;
         const element = document.getElementById(`task-card-${taskId}`);
         if (element) {
+          clearInterval(interval);
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
           
           // Add a highly visible glowing red ring animation to draw focus
@@ -110,10 +114,11 @@ function AppContent() {
           setTimeout(() => {
             element.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2', 'animate-pulse', 'shadow-[0_0_30px_rgba(239,68,68,0.5)]');
           }, 4000);
-        } else {
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
           console.warn('Could not find task element with ID:', `task-card-${taskId}`);
         }
-      }, 350);
+      }, 100);
     };
 
     window.addEventListener('navigate-to-task', handleNavigateToTask);
@@ -269,7 +274,7 @@ function AppContent() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                     <input 
                       type="text" 
-                      placeholder="搜尋內容、地點、或任務編號..." 
+                      placeholder="搜尋內容、地點、任務編號或「開放中」/「open」..." 
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all shadow-sm"
