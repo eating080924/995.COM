@@ -421,7 +421,7 @@ export function NotificationDropdown() {
                           await markAsRead(n.id);
                         }
                         setIsOpen(false);
-                        const event = new CustomEvent('navigate-to-task', { detail: { taskId: n.taskId, type: n.type } });
+                        const event = new CustomEvent('navigate-to-task', { detail: { taskId: n.taskId, taskNum: n.taskNum, type: n.type } });
                         window.dispatchEvent(event);
                       }}
                       className={`p-4 transition-all duration-200 cursor-pointer flex gap-3 ${

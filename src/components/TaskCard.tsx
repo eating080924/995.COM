@@ -1001,6 +1001,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       <motion.div
         layout
         id={`task-card-${task.id}`}
+        data-task-num={task.taskNum}
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-red-200 hover:shadow-md transition-all duration-300 shadow-sm flex flex-col group h-full relative"

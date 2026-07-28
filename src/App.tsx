@@ -87,23 +87,28 @@ function AppContent() {
   React.useEffect(() => {
     const handleNavigateToTask = (e: Event) => {
       const customEvent = e as CustomEvent;
-      const { taskId } = customEvent.detail || {};
-      if (!taskId) return;
+      const { taskId, taskNum } = customEvent.detail || {};
+      if (!taskId && !taskNum) return;
 
       // 1. Reset filter tab to 'all' so the task is guaranteed to be in the list
       setActiveTab('all');
       
-      // 2. Clear search and other filters so the target card is not hidden
-      setSearchQuery('');
+      // 2. Set search query to taskNum if available so the list filters directly to this taskNum
+      if (taskNum) {
+        setSearchQuery(taskNum);
+      } else {
+        setSearchQuery('');
+      }
       setCategoryFilter('');
       setRegionFilter('');
 
-      // 3. Poll for the task element and scroll directly to it once mounted
+      // 3. Poll for the task element by taskNum or taskId and scroll directly to it once mounted
       let attempts = 0;
       const maxAttempts = 30; // 3 seconds total
       const interval = setInterval(() => {
         attempts++;
-        const element = document.getElementById(`task-card-${taskId}`);
+        const element = (taskNum ? document.querySelector(`[data-task-num="${taskNum}"]`) : null) ||
+                        (taskId ? document.getElementById(`task-card-${taskId}`) : null);
         if (element) {
           clearInterval(interval);
           element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -116,7 +121,7 @@ function AppContent() {
           }, 4000);
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
-          console.warn('Could not find task element with ID:', `task-card-${taskId}`);
+          console.warn('Could not find task element with taskNum or ID:', taskNum, taskId);
         }
       }, 100);
     };
