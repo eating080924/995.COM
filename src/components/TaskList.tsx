@@ -139,6 +139,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
       (task.location && String(task.location).toLowerCase().includes(lowerQuery)) ||
       (task.reward && String(task.reward).toLowerCase().includes(lowerQuery)) ||
       (task.taskNum && String(task.taskNum).toLowerCase().includes(lowerQuery)) ||
+      (task.id && String(task.id).toLowerCase().includes(lowerQuery)) ||
       (task.category && String(task.category).toLowerCase().includes(lowerQuery)) ||
       (task.region && String(task.region).toLowerCase().includes(lowerQuery))
     );

@@ -90,12 +90,18 @@ function AppContent() {
       const { taskId, taskNum } = customEvent.detail || {};
       if (!taskId && !taskNum) return;
 
+      // Close modal forms if open to reveal the task feed
+      setShowTaskForm(false);
+      setShowBroadcastForm(false);
+
       // 1. Reset filter tab to 'all' so the task is guaranteed to be in the list
       setActiveTab('all');
       
-      // 2. Set search query to taskNum if available so the list filters directly to this taskNum
+      // 2. Set search query to taskNum or taskId so the list filters directly to this task
       if (taskNum) {
         setSearchQuery(taskNum);
+      } else if (taskId) {
+        setSearchQuery(taskId);
       } else {
         setSearchQuery('');
       }
