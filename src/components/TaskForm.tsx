@@ -79,7 +79,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   const nowLocalStr = React.useMemo(() => formatForInput(new Date()), []);
 
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const { register, handleSubmit, watch, formState: { errors, isSubmitting } } = useForm<FormData>({
     defaultValues: taskToEdit ? {
       content: taskToEdit.content,
       reward: taskToEdit.reward,
@@ -91,10 +91,36 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       contact: taskToEdit.contact,
     } : {
       deadlineStart: formatForInput(new Date()),
+      deadlineEnd: formatForInput(new Date(Date.now() + 2 * 60 * 60 * 1000)), // 預設為現在 + 2 小時
       category: '跑腿代購',
       region: '台北市',
     }
   });
+
+  const watchedDeadlineStart = watch('deadlineStart');
+
+  // 計算預計結束時間的最小與最大允許時間（現在/開始時間 + 1小時 ~ 現在 + 14天）
+  const { minDeadlineEndStr, maxDeadlineEndStr } = React.useMemo(() => {
+    const now = new Date();
+    const nowPlus1Hr = new Date(now.getTime() + 60 * 60 * 1000);
+    const nowPlus14Days = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    let minEnd = nowPlus1Hr;
+    if (watchedDeadlineStart) {
+      const start = new Date(watchedDeadlineStart);
+      if (!isNaN(start.getTime())) {
+        const startPlus1Hr = new Date(start.getTime() + 60 * 60 * 1000);
+        if (startPlus1Hr > minEnd) {
+          minEnd = startPlus1Hr;
+        }
+      }
+    }
+
+    return {
+      minDeadlineEndStr: formatForInput(minEnd),
+      maxDeadlineEndStr: formatForInput(nowPlus14Days)
+    };
+  }, [watchedDeadlineStart]);
 
   const generateTaskNum = () => {
     const now = new Date();
@@ -116,8 +142,27 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       
       const startDate = new Date(data.deadlineStart);
       const endDate = new Date(data.deadlineEnd);
+      const now = new Date();
+      const minAllowedEnd = new Date(Math.max(now.getTime() + 59 * 60 * 1000, startDate.getTime() + 59 * 60 * 1000));
+      const maxAllowedEnd = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000 + 60 * 1000);
+
       if (endDate < startDate) {
         setSubmitError('預計結束時間不能早於任務開始時間。');
+        return;
+      }
+
+      if (endDate < new Date(startDate.getTime() + 59 * 60 * 1000)) {
+        setSubmitError('預計結束時間至少須為任務開始時間後 1 小時（60 分鐘）。');
+        return;
+      }
+
+      if (endDate < new Date(now.getTime() + 59 * 60 * 1000)) {
+        setSubmitError('預計結束時間至少須為當前時間 1 小時（60 分鐘）之後。');
+        return;
+      }
+
+      if (endDate > maxAllowedEnd) {
+        setSubmitError('預計結束時間不得超過當前時間 14 天（336 小時）。');
         return;
       }
 
@@ -351,9 +396,33 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               <label className="block text-sm font-bold text-slate-700 mb-1">預計結束時間</label>
               <input
                 type="datetime-local"
-                {...register('deadlineEnd', { required: '請選擇結束時間' })}
+                min={minDeadlineEndStr}
+                max={maxDeadlineEndStr}
+                {...register('deadlineEnd', { 
+                  required: '請選擇結束時間',
+                  validate: (value) => {
+                    const endDate = new Date(value);
+                    const now = new Date();
+                    const startDateStr = watch('deadlineStart');
+                    const startDate = startDateStr ? new Date(startDateStr) : new Date();
+
+                    if (endDate < new Date(startDate.getTime() + 59 * 60 * 1000)) {
+                      return '預計結束時間至少須為任務開始時間後 1 小時';
+                    }
+                    if (endDate < new Date(now.getTime() + 59 * 60 * 1000)) {
+                      return '預計結束時間至少須為當前時間 1 小時之後';
+                    }
+                    if (endDate > new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000 + 60 * 1000)) {
+                      return '預計結束時間不得超過當前時間 14 天';
+                    }
+                    return true;
+                  }
+                })}
                 className="w-full px-4 py-2 border border-slate-200 rounded-xl focus:ring-2 focus:ring-red-500/20 focus:border-red-500 outline-none transition-all text-sm"
               />
+              <p className="text-[11px] font-medium text-slate-500 mt-1">
+                💡 限制區間：須介於「現在/開始時間 + 1 小時」至「現在 + 14 天」之間。
+              </p>
               {errors.deadlineEnd && <p className="text-red-500 text-xs mt-1">{errors.deadlineEnd.message}</p>}
             </div>
           </div>

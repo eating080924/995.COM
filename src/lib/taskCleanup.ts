@@ -15,11 +15,10 @@ export async function performTaskCleanup(userId: string | undefined) {
     const now = new Date();
     const tasksRef = collection(db, 'tasks');
 
-    // 1. Cleanup "Open" tasks older than 3 days
+    // 1. Cleanup "Open" tasks whose deadlineEnd has passed or exceeded max lifespan (14 days)
     // Use an extra hour on the client to avoid clock skew issues with Firestore rules
-    const threeDaysAnHourAgo = new Date();
-    threeDaysAnHourAgo.setDate(now.getDate() - 3);
-    threeDaysAnHourAgo.setHours(threeDaysAnHourAgo.getHours() - 1);
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000);
 
     const openTasksQuery = query(
       tasksRef,
@@ -41,21 +40,31 @@ export async function performTaskCleanup(userId: string | undefined) {
           const data = taskDoc.data();
           const currentDate = new Date();
           
-          // Condition 1: Created older than 3 days
-          let isOlderThan3Days = false;
-          if (data.createdAt) {
-            const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
-            isOlderThan3Days = createdAt < threeDaysAnHourAgo;
-          }
-          
-          // Condition 2: deadlineEnd has passed
-          let isDeadlinePassed = false;
+          let isExpired = false;
+
           if (data.deadlineEnd) {
             const deadlineEnd = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
-            isDeadlinePassed = deadlineEnd < currentDate;
+            // 條件 A：如果設有預計結束時間，且該時間已到期，則判定超時關閉
+            if (deadlineEnd < currentDate) {
+              isExpired = true;
+            }
+          } else if (data.createdAt) {
+            // 條件 B：相容未設定 deadlineEnd 的舊版任務，發佈超過 3 天即自動關閉
+            const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+            if (createdAt < threeDaysAgo) {
+              isExpired = true;
+            }
           }
-          
-          return isOlderThan3Days || isDeadlinePassed;
+
+          // 條件 C：系統防護底線，無論有無 deadlineEnd，發佈時間若超過 14 天上限強制關閉
+          if (data.createdAt) {
+            const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+            if (createdAt < fourteenDaysAgo) {
+              isExpired = true;
+            }
+          }
+
+          return isExpired;
         })
         .map(async (taskDoc) => {
           try {
