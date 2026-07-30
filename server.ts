@@ -337,8 +337,8 @@ async function startServer() {
         title = "任務委託邀請 💌";
         body = `委託人 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
       } else if (type === "rpa_push") {
-        title = "推播訊息 📢";
-        body = `${safeSenderName} 向您發出了專屬推播訊息！請點擊查看。`;
+        title = `${safeSenderName} 📢`; // 標題顯示：推播者名稱 📢
+        body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。"; // 內文直接顯示 Python 傳來的推播內容
       }
 
       const payload = {
