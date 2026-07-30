@@ -229,7 +229,14 @@ export function NotificationDropdown() {
           title: '任務委託邀請 💌',
           color: 'bg-red-50 text-red-700 border-red-100',
           badgeColor: 'bg-red-500',
-          desc: `案主 ${n.senderName} 向您發出了專屬委託邀請！請點擊查看。`,
+          desc: `委託人 ${n.senderName} 向您發出了專屬委託邀請！請點擊查看。`,
+        };
+      case 'rpa_push':
+        return {
+          title: '推播訊息 📢',
+          color: 'bg-red-50 text-red-700 border-red-100',
+          badgeColor: 'bg-red-500',
+          desc: `${n.senderName} 向您發出了專屬推播訊息！請點擊查看。`,
         };
       default:
         return {
