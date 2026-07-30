@@ -335,7 +335,10 @@ async function startServer() {
         body = `您承接的委託任務 [${safeTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
       } else if (type === "agent_invite") {
         title = "任務委託邀請 💌";
-        body = `案主 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
+        body = `委託人 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
+      } else if (type === "rpa_push") {
+        title = "推播訊息 📢";
+        body = `${safeSenderName} 向您發出了專屬推播訊息！請點擊查看。`;
       }
 
       const payload = {
