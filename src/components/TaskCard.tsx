@@ -781,6 +781,16 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const handleComplete = async () => {
     if (!user || user.uid !== task.requesterId) return;
     
+    if (!task.acceptorCompleted) {
+      setConfirmConfig({
+        title: '尚未解鎖結案 🔒',
+        message: '承接者尚未回報「任務已完成」。請待承接者點擊回報完工後，再進行驗收結案。',
+        onConfirm: () => {},
+        showCancel: false
+      });
+      return;
+    }
+
     setConfirmConfig({
       title: '完成結案',
       message: '是否確認完成此任務並結案？',
@@ -1248,7 +1258,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                     {!task.acceptorContacted ? (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                         <p className="text-[10px] text-amber-800 leading-relaxed font-bold">
-                          ⚠️ 提醒：請於承接後 24 小時內主動聯繫委託人並按下「我已主動聯繫委託人」。若 1 小時未聯繫，委託人可回報無故未聯繫；若 24 小時未聯繫，系統將自動重開任務並上記信用違規。
+                          ⚠️ 提醒：請於承接後 24 小時內主動聯繫委託人並按下「我已主動聯繫委託人」。若 24 小時未聯繫，系統將自動重開任務並上記信用違規。
                         </p>
                         <button
                           onClick={handleReportContacted}
@@ -1294,12 +1304,12 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                               onClick={handleOwnerConfirmContact}
                               className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black transition-all transform active:scale-95 shadow-sm"
                             >
-                              確認承接者已主動聯繫 (點此鎖定執行) 🔒
+                              確認承接者已主動聯繫
                             </button>
                           </div>
                         ) : (
                           <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
-                            <span>🔒 雙方已確認聯繫 (任務已鎖定執行)</span>
+                            <span>雙方已確認聯繫</span>
                             <span className="text-[9px] text-indigo-500 font-mono">
                               {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
                             </span>
@@ -1407,6 +1417,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 )}
                 {task.status === 'accepted' && (
                   <div className="flex flex-col gap-2">
+                    {!task.acceptorCompleted && (
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                        <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
+                          🔒 <strong>等待承接者完工中</strong>：需待承接者點擊「回報任務已完成」後，方可解鎖「確認完成結案」按鈕。
+                        </p>
+                      </div>
+                    )}
                     {task.acceptorCompleted && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 mb-1.5">
                         <div className="flex items-center gap-1.5 text-amber-800 font-black text-xs">
@@ -1425,7 +1442,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={handleComplete}
-                        className="py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1"
+                        disabled={!task.acceptorCompleted}
+                        className={cn(
+                          "py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm",
+                          task.acceptorCompleted
+                            ? "bg-green-600 hover:bg-green-700 text-white transform active:scale-95 cursor-pointer"
+                            : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        )}
                       >
                         <CheckCircle size={14} />
                         確認完成結案

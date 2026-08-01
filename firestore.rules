@@ -147,6 +147,12 @@ service cloud.firestore {
           resource.data.acceptorId == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acceptorContacted', 'acceptorContactedAt', 'updatedAt'])
         ) ||
+        // Action: Confirm Contact (by owner)
+        (
+          resource.data.status == 'accepted' &&
+          isOwner(resource.data.requesterId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ownerConfirmedContact', 'ownerConfirmedContactAt', 'updatedAt'])
+        ) ||
         // Action: Report Completed (by acceptor)
         (
           resource.data.status == 'accepted' &&
@@ -159,13 +165,10 @@ service cloud.firestore {
           request.resource.data.status == 'open' &&
           request.resource.data.get('acceptorId', null) == null &&
           request.resource.data.get('acceptorName', null) == null &&
-          request.resource.data.get('acceptorContacted', null) == null &&
-          request.resource.data.get('acceptorContactedAt', null) == null &&
-          request.resource.data.get('acceptorCompleted', null) == null &&
-          request.resource.data.get('acceptorCompletedAt', null) == null &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'acceptorId', 'acceptorName', 'acceptedAt', 'acceptorContacted', 
-            'acceptorContactedAt', 'acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'
+            'acceptorContactedAt', 'ownerConfirmedContact', 'ownerConfirmedContactAt',
+            'acceptorCompleted', 'acceptorCompletedAt', 'updatedAt'
           ])
         ) ||
         // Action: Raise Dispute (by owner)
