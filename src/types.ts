@@ -21,6 +21,8 @@ export interface Task {
   acceptorRated?: boolean; // Whether acceptor rated requester
   acceptorContacted?: boolean; // Whether acceptor confirmed they contacted the requester
   acceptorContactedAt?: any;
+  ownerConfirmedContact?: boolean; // Whether requester confirmed acceptor contacted
+  ownerConfirmedContactAt?: any;
   acceptorCompleted?: boolean; // Whether acceptor reported the task as completed
   acceptorCompletedAt?: any;
   hasDispute?: boolean; // Whether there is a cancellation or deletion dispute

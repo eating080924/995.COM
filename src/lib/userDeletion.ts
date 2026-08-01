@@ -51,7 +51,7 @@ export async function checkUserCanDeleteAccount(userId: string): Promise<Deletio
       }
     }
 
-    // 2. Check active or disputed tasks posted by user or accepted by user
+    // 2. Check active tasks posted by user or accepted by user
     const tasksRef = collection(db, 'tasks');
     
     // As requester
@@ -59,12 +59,10 @@ export async function checkUserCanDeleteAccount(userId: string): Promise<Deletio
     const reqSnap = await getDocs(reqQuery);
 
     let activeAsRequester = 0;
-    let disputedAsRequester = 0;
 
     reqSnap.docs.forEach((d) => {
       const data = d.data();
       if (data.status === 'accepted') activeAsRequester++;
-      if (data.hasDispute === true) disputedAsRequester++;
     });
 
     // As acceptor
@@ -72,25 +70,13 @@ export async function checkUserCanDeleteAccount(userId: string): Promise<Deletio
     const accSnap = await getDocs(accQuery);
 
     let activeAsAcceptor = 0;
-    let disputedAsAcceptor = 0;
 
     accSnap.docs.forEach((d) => {
       const data = d.data();
       if (data.status === 'accepted') activeAsAcceptor++;
-      if (data.hasDispute === true) disputedAsAcceptor++;
     });
 
     const totalActive = activeAsRequester + activeAsAcceptor;
-    const totalDisputed = disputedAsRequester + disputedAsAcceptor;
-
-    if (totalDisputed > 0) {
-      return {
-        success: false,
-        code: 'BLOCKED_DISPUTED',
-        message: `您尚有 ${totalDisputed} 件爭議待處理的委託任務，暫時無法註銷帳號。請待爭議裁決完結後再行申請。`,
-        details: { disputedTasksCount: totalDisputed },
-      };
-    }
 
     if (totalActive > 0) {
       return {

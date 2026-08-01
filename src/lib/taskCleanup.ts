@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, deleteField, serverTimestamp, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { handleFirestoreError, OperationType } from './errorHandler';
 import { sendNotification } from './notificationService';
@@ -85,8 +85,7 @@ export async function performTaskCleanup(userId: string | undefined) {
       console.log(`Auto-cleaned ${deletedCount} expired/overdue open tasks by setting status to 'timeout'.`);
     }
 
-    // 2. Auto-complete "Accepted" tasks that reached deadlineEnd
-    // Use an extra 5 minutes on the client to avoid clock skew
+    // 2. Auto-complete "Accepted" tasks that reached deadlineEnd or handle contact timeouts
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
 
     const acceptedTasksQuery = query(
@@ -105,36 +104,117 @@ export async function performTaskCleanup(userId: string | undefined) {
 
     const completeResults = await Promise.all(
       acceptedTasksSnapshot.docs
-        .filter(taskDoc => {
-          const data = taskDoc.data();
-          if (!data.deadlineEnd) return false;
-          const deadlineDate = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
-          return deadlineDate < fiveMinutesAgo;
-        })
         .map(async (taskDoc) => {
           const data = taskDoc.data();
-          try {
-            await updateDoc(taskDoc.ref, {
-              status: 'completed',
-              updatedAt: serverTimestamp()
-            });
-            if (data.acceptorId) {
-              await sendNotification({
-                userId: data.acceptorId,
-                type: 'task_completed',
-                taskId: taskDoc.id,
-                taskNum: data.taskNum || '',
-                taskContent: data.content || '',
-                senderId: userId,
-                senderName: '系統自動結案',
-              });
+          const currentDate = new Date();
+
+          // Rule 3A: Check deadlineEnd for accepted tasks
+          if (data.deadlineEnd) {
+            const deadlineDate = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
+            if (deadlineDate < fiveMinutesAgo) {
+              if (data.acceptorCompleted) {
+                // 1. 已回報完工：自動驗收結案
+                try {
+                  await updateDoc(taskDoc.ref, {
+                    status: 'completed',
+                    autoCompletedBySystem: true,
+                    updatedAt: serverTimestamp()
+                  });
+                  if (data.acceptorId) {
+                    await sendNotification({
+                      userId: data.acceptorId,
+                      type: 'task_completed',
+                      taskId: taskDoc.id,
+                      taskNum: data.taskNum || '',
+                      taskContent: data.content || '',
+                      senderId: userId,
+                      senderName: '系統自動結案',
+                    });
+                  }
+                  console.log(`Successfully auto-completed task ${taskDoc.id} at deadlineEnd`);
+                  return { success: true };
+                } catch (e) {
+                  console.warn(`Failed to auto-complete task ${taskDoc.id}:`, e);
+                  return { success: false };
+                }
+              } else {
+                // 2. 未回報完工：逾預計結束時間自動重開委託
+                try {
+                  await updateDoc(taskDoc.ref, {
+                    status: 'open',
+                    acceptorId: deleteField(),
+                    acceptorName: deleteField(),
+                    acceptedAt: deleteField(),
+                    acceptorContacted: deleteField(),
+                    acceptorContactedAt: deleteField(),
+                    ownerConfirmedContact: deleteField(),
+                    ownerConfirmedContactAt: deleteField(),
+                    acceptorCompleted: deleteField(),
+                    acceptorCompletedAt: deleteField(),
+                    updatedAt: serverTimestamp()
+                  });
+
+                  if (data.acceptorId) {
+                    await sendNotification({
+                      userId: data.acceptorId,
+                      type: 'task_unaccepted',
+                      taskId: taskDoc.id,
+                      taskNum: data.taskNum || '',
+                      taskContent: `⚡ 系統自動重開委託：您承接的委託 [${data.taskNum || ''}] 因已逾預計結束時間未回報完工，系統已自動重開委託，您的承接資格已釋放。`,
+                      senderId: 'system',
+                      senderName: '系統管理員'
+                    });
+                  }
+
+                  await sendNotification({
+                    userId: data.requesterId,
+                    type: 'task_unaccepted',
+                    taskId: taskDoc.id,
+                    taskNum: data.taskNum || '',
+                    taskContent: `⚡ 系統自動重開委託：您的委託 [${data.taskNum || ''}] 因承接者已逾預計結束時間未回報完工，系統已自動為您重開委託為【開放中】。`,
+                    senderId: 'system',
+                    senderName: '系統管理員'
+                  });
+
+                  console.log(`Successfully auto-reset unfinished task ${taskDoc.id} to 'open' at deadlineEnd`);
+                  return { success: true };
+                } catch (e) {
+                  console.warn(`Failed to auto-reset unfinished task ${taskDoc.id}:`, e);
+                  return { success: false };
+                }
+              }
             }
-            console.log(`Successfully auto-completed task ${taskDoc.id}`);
-            return { success: true };
-          } catch (e) {
-            console.warn(`Failed to auto-complete task ${taskDoc.id} (Owner: ${data.requesterId}, Viewer: ${userId}):`, e);
-            return { success: false };
           }
+
+          // Rule 2B: Owner 1-hour contact confirmation timeout reset to 'open'
+          if (data.acceptorContacted && !data.ownerConfirmedContact && data.acceptorContactedAt) {
+            const contactedAt = data.acceptorContactedAt.toDate ? data.acceptorContactedAt.toDate() : new Date(data.acceptorContactedAt);
+            const oneHourMs = 60 * 60 * 1000;
+            if (currentDate.getTime() - contactedAt.getTime() > oneHourMs) {
+              try {
+                await updateDoc(taskDoc.ref, {
+                  status: 'open',
+                  acceptorId: deleteField(),
+                  acceptorName: deleteField(),
+                  acceptedAt: deleteField(),
+                  acceptorContacted: deleteField(),
+                  acceptorContactedAt: deleteField(),
+                  ownerConfirmedContact: deleteField(),
+                  ownerConfirmedContactAt: deleteField(),
+                  acceptorCompleted: deleteField(),
+                  acceptorCompletedAt: deleteField(),
+                  updatedAt: serverTimestamp()
+                });
+                console.log(`Auto-reset task ${taskDoc.id} to 'open' because owner did not confirm contact within 1 hour.`);
+                return { success: true };
+              } catch (e) {
+                console.warn(`Failed to auto-reset unconfirmed contact task ${taskDoc.id}:`, e);
+                return { success: false };
+              }
+            }
+          }
+
+          return { success: false };
         })
     );
 

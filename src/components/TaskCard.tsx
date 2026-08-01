@@ -46,7 +46,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [canReportStaleProgress, setCanReportStaleProgress] = useState(false);
   const [staleProgressTimeLeft, setStaleProgressTimeLeft] = useState<string>('');
 
-  // ⚡ 防卡死自動超時驗收結案 (48小時無回應自動審核)
+  // ⚡ 防卡死自動超時驗收結案 (到達預計結束時間無回應自動審核)
   const triggerAutoCompletion = async () => {
     if (!user) return;
     try {
@@ -62,7 +62,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
         type: 'task_accepted',
         taskId: task.id,
         taskNum: task.taskNum || '',
-        taskContent: `⚡ 系統防卡死自動結案：因超人回報完工已滿 48 小時且無異議，系統已自動為您完成驗收結案！`,
+        taskContent: `⚡ 系統防卡死自動結案：因已達預計結束時間且未手動驗收，系統已自動為您完成驗收結案！`,
         senderId: 'system',
         senderName: '系統管理員'
       });
@@ -177,46 +177,85 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     }
   };
 
-  // ⚡ 48 小時已聯繫但無進展，委託人重開委託處理
-  const handleReportStaleProgress = async () => {
-    if (!user || user.uid !== task.requesterId) return;
+  // ⚡ 系統防卡死：逾預計結束時間未完工，系統自動重開委託
+  const triggerAutoStaleProgressReset = async () => {
+    if (!user) return;
+    try {
+      const originalAcceptorId = task.acceptorId;
+      const taskRef = doc(db, 'tasks', task.id);
+      await updateDoc(taskRef, {
+        status: 'open',
+        acceptorId: deleteField(),
+        acceptorName: deleteField(),
+        acceptedAt: deleteField(),
+        acceptorContacted: deleteField(),
+        acceptorContactedAt: deleteField(),
+        ownerConfirmedContact: deleteField(),
+        ownerConfirmedContactAt: deleteField(),
+        acceptorCompleted: deleteField(),
+        acceptorCompletedAt: deleteField(),
+        updatedAt: serverTimestamp()
+      });
 
-    setConfirmConfig({
-      title: '超時無進展申請重開委託？',
-      message: '⚠️ 承接者已超過 48 小時未回報任務完成。確認重開後：\n1. 任務將重回【開放中】狀態，開放其他超人承接。\n2. 系統將取消該位超人的承接資格並給予提醒。',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          const originalAcceptorId = task.acceptorId;
-          const taskRef = doc(db, 'tasks', task.id);
-          await updateDoc(taskRef, {
-            status: 'open',
-            acceptorId: deleteField(),
-            acceptorName: deleteField(),
-            acceptedAt: deleteField(),
-            acceptorContacted: deleteField(),
-            acceptorContactedAt: deleteField(),
-            acceptorCompleted: deleteField(),
-            acceptorCompletedAt: deleteField(),
-            updatedAt: serverTimestamp()
-          });
-
-          if (originalAcceptorId) {
-            await sendNotification({
-              userId: originalAcceptorId,
-              type: 'task_unaccepted',
-              taskId: task.id,
-              taskNum: task.taskNum || '',
-              taskContent: `您承接的委託 [${task.taskNum}] 因逾 48 小時無完工進展，已被委託人申請重開，您的承接資格已釋放。`,
-              senderId: user.uid,
-              senderName: user.displayName || '委託人',
-            });
-          }
-        } catch (err) {
-          console.error('Failed to reset stale progress task:', err);
-        }
+      if (originalAcceptorId) {
+        await sendNotification({
+          userId: originalAcceptorId,
+          type: 'task_unaccepted',
+          taskId: task.id,
+          taskNum: task.taskNum || '',
+          taskContent: `⚡ 系統自動重開委託：您承接的委託 [${task.taskNum}] 因已逾預計結束時間未回報完工，系統已自動重開委託，您的承接資格已釋放。`,
+          senderId: 'system',
+          senderName: '系統管理員'
+        });
       }
-    });
+
+      await sendNotification({
+        userId: task.requesterId,
+        type: 'task_unaccepted',
+        taskId: task.id,
+        taskNum: task.taskNum || '',
+        taskContent: `⚡ 系統自動重開委託：您的委託 [${task.taskNum}] 因承接者已逾預計結束時間未回報完工，系統已自動為您重開委託為【開放中】。`,
+        senderId: 'system',
+        senderName: '系統管理員'
+      });
+    } catch (err) {
+      console.error('Auto stale progress reset failed:', err);
+    }
+  };
+
+  // ⚡ 防卡死：委託人 1 小時未確認聯繫自動重開
+  const triggerAutoOwnerUnconfirmedReset = async () => {
+    if (!user) return;
+    try {
+      const taskRef = doc(db, 'tasks', task.id);
+      await updateDoc(taskRef, {
+        status: 'open',
+        acceptorId: deleteField(),
+        acceptorName: deleteField(),
+        acceptedAt: deleteField(),
+        acceptorContacted: deleteField(),
+        acceptorContactedAt: deleteField(),
+        ownerConfirmedContact: deleteField(),
+        ownerConfirmedContactAt: deleteField(),
+        acceptorCompleted: deleteField(),
+        acceptorCompletedAt: deleteField(),
+        updatedAt: serverTimestamp()
+      });
+
+      if (task.acceptorId) {
+        await sendNotification({
+          userId: task.acceptorId,
+          type: 'task_unaccepted',
+          taskId: task.id,
+          taskNum: task.taskNum || '',
+          taskContent: `⚡ 系統自動調整：因委託人逾 1 小時未按下「確認聯繫」，任務已自動重開為開放中，釋放您的承接資格。`,
+          senderId: 'system',
+          senderName: '系統管理員'
+        });
+      }
+    } catch (err) {
+      console.error('Auto owner unconfirmed contact reset failed:', err);
+    }
   };
 
   useEffect(() => {
@@ -232,7 +271,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     const calculateTimers = () => {
       const now = Date.now();
 
-      // (A) 1小時 / 24小時無聯繫計時
+      // (A) 承接者 24 小時未回報聯繫自動重開
       const acceptedTime = task.acceptedAt?.toDate 
         ? task.acceptedAt.toDate() 
         : (task.acceptedAt ? new Date(task.acceptedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date(task.updatedAt || task.createdAt)));
@@ -257,43 +296,87 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
         }
       }
 
-      // (B) 超人已回報完成，48 小時自動審核結案計時
-      if (task.acceptorCompleted && !task.hasDispute) {
-        const completedTime = task.acceptorCompletedAt?.toDate
-          ? task.acceptorCompletedAt.toDate()
-          : (task.acceptorCompletedAt ? new Date(task.acceptorCompletedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date()));
-        
-        const fortyEightHoursMs = 48 * 60 * 60 * 1000;
-        const elapsedComplete = now - completedTime.getTime();
-        const remainingComplete = fortyEightHoursMs - elapsedComplete;
-
-        if (remainingComplete <= 0) {
-          triggerAutoCompletion();
-        } else {
-          const hoursLeft = Math.floor(remainingComplete / (1000 * 60 * 60));
-          const minsLeft = Math.ceil((remainingComplete % (1000 * 60 * 60)) / (1000 * 60));
-          setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
-        }
-      }
-
-      // (C) 超人已回報聯繫，但超過 48 小時無進展（未回報完成）
-      if (task.acceptorContacted && !task.acceptorCompleted) {
+      // (B) 委託者 1 小時未「確認承接者已聯繫」自動重開
+      if (task.acceptorContacted && !task.ownerConfirmedContact && task.acceptorContactedAt) {
         const contactedTime = task.acceptorContactedAt?.toDate
           ? task.acceptorContactedAt.toDate()
           : (task.acceptorContactedAt ? new Date(task.acceptorContactedAt) : acceptedTime);
 
-        const fortyEightHoursMs = 48 * 60 * 60 * 1000;
         const elapsedContact = now - contactedTime.getTime();
-        const remainingContact = fortyEightHoursMs - elapsedContact;
+        if (elapsedContact >= oneHourMs) {
+          triggerAutoOwnerUnconfirmedReset();
+          return;
+        }
+      }
 
-        if (remainingContact <= 0) {
-          setCanReportStaleProgress(true);
-          setStaleProgressTimeLeft('');
+      // (C) 承接者已回報完成，依據「預計結束時間 (deadlineEnd)」進行自動驗收結案計時
+      if (task.acceptorCompleted) {
+        const deadlineDate = task.deadlineEnd ? new Date(task.deadlineEnd) : null;
+        
+        if (deadlineDate) {
+          const remainingComplete = deadlineDate.getTime() - now;
+          if (remainingComplete <= 0) {
+            triggerAutoCompletion();
+            return;
+          } else {
+            const hoursLeft = Math.floor(remainingComplete / (1000 * 60 * 60));
+            const minsLeft = Math.ceil((remainingComplete % (1000 * 60 * 60)) / (1000 * 60));
+            setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          }
         } else {
-          setCanReportStaleProgress(false);
-          const hoursLeft = Math.floor(remainingContact / (1000 * 60 * 60));
-          const minsLeft = Math.ceil((remainingContact % (1000 * 60 * 60)) / (1000 * 60));
-          setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          // 相容舊資料未設定 deadlineEnd：完工後 48 小時自動結案
+          const completedTime = task.acceptorCompletedAt?.toDate
+            ? task.acceptorCompletedAt.toDate()
+            : (task.acceptorCompletedAt ? new Date(task.acceptorCompletedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date()));
+          
+          const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+          const elapsedComplete = now - completedTime.getTime();
+          const remainingComplete = fortyEightHoursMs - elapsedComplete;
+
+          if (remainingComplete <= 0) {
+            triggerAutoCompletion();
+            return;
+          } else {
+            const hoursLeft = Math.floor(remainingComplete / (1000 * 60 * 60));
+            const minsLeft = Math.ceil((remainingComplete % (1000 * 60 * 60)) / (1000 * 60));
+            setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          }
+        }
+      }
+
+      // (D) 承接者未回報完成，依據「預計結束時間 (deadlineEnd)」進行系統自動重開委託計時
+      if (!task.acceptorCompleted) {
+        const deadlineDate = task.deadlineEnd ? new Date(task.deadlineEnd) : null;
+        if (deadlineDate) {
+          const remainingContact = deadlineDate.getTime() - now;
+          if (remainingContact <= 0) {
+            triggerAutoStaleProgressReset();
+            return;
+          } else {
+            setCanReportStaleProgress(false);
+            const hoursLeft = Math.floor(remainingContact / (1000 * 60 * 60));
+            const minsLeft = Math.ceil((remainingContact % (1000 * 60 * 60)) / (1000 * 60));
+            setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          }
+        } else if (task.acceptorContacted) {
+          // 若無 deadlineEnd，相容舊邏輯以聯繫時間起算 48 小時自動重開
+          const contactedTime = task.acceptorContactedAt?.toDate
+            ? task.acceptorContactedAt.toDate()
+            : (task.acceptorContactedAt ? new Date(task.acceptorContactedAt) : acceptedTime);
+
+          const fortyEightHoursMs = 48 * 60 * 60 * 1000;
+          const elapsedContact = now - contactedTime.getTime();
+          const remainingContact = fortyEightHoursMs - elapsedContact;
+
+          if (remainingContact <= 0) {
+            triggerAutoStaleProgressReset();
+            return;
+          } else {
+            setCanReportStaleProgress(false);
+            const hoursLeft = Math.floor(remainingContact / (1000 * 60 * 60));
+            const minsLeft = Math.ceil((remainingContact % (1000 * 60 * 60)) / (1000 * 60));
+            setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          }
         }
       }
     };
@@ -301,7 +384,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     calculateTimers();
     const interval = setInterval(calculateTimers, 10000);
     return () => clearInterval(interval);
-  }, [task.status, task.acceptedAt, task.acceptorContacted, task.acceptorContactedAt, task.acceptorCompleted, task.acceptorCompletedAt, task.hasDispute, task.acceptorId]);
+  }, [task.status, task.acceptedAt, task.acceptorContacted, task.acceptorContactedAt, task.acceptorCompleted, task.acceptorCompletedAt, task.acceptorId]);
 
   // Acceptor profile state for displaying active title
   const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
@@ -578,25 +661,36 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const handleCancelAccept = async () => {
     if (!user || user.uid !== task.acceptorId) return;
     
+    // Calculate hold duration
+    const acceptedAt = task.acceptedAt?.toDate 
+      ? task.acceptedAt.toDate() 
+      : (task.acceptedAt ? new Date(task.acceptedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date()));
+    const elapsedMs = Date.now() - acceptedAt.getTime();
+    const isWithin10Mins = elapsedMs <= 10 * 60 * 1000; // 10 minutes
+
     setConfirmConfig({
       title: '是否確認取消承接此任務？',
-      message: '⚠️ 提醒：若是在承接 10 分鐘內「立刻取消」，將會觸發安全機制並限制您 10 分鐘內無法承接任何新任務。',
+      message: isWithin10Mins
+        ? '⚠️ 系統警示：您於承接後 10 分鐘內選擇取消承接。根據規範，系統將記違規 1 次並更新至您的個人信用檔案，任務將卡片狀態設為【開放中】。確定要取消嗎？'
+        : '⚠️ 提醒：取消承接後，任務將重置為【開放中】狀態開放給其他超人承接。確定要取消嗎？',
       variant: 'danger',
       onConfirm: async () => {
         try {
-          // Calculate hold duration
-          const acceptedAt = task.updatedAt?.toDate 
-            ? task.updatedAt.toDate() 
-            : (task.updatedAt ? new Date(task.updatedAt) : null);
-          const elapsedMs = acceptedAt ? (Date.now() - acceptedAt.getTime()) : 0;
-          const isQuickCancel = elapsedMs < 100 * 60 * 1000; // 10 minutes
+          const originalAcceptorId = user.uid;
 
-          // 1. Reset task status
+          // 1. Reset task status to 'open'
           const taskRef = doc(db, 'tasks', task.id);
           await updateDoc(taskRef, {
             status: 'open',
             acceptorId: deleteField(),
             acceptorName: deleteField(),
+            acceptedAt: deleteField(),
+            acceptorContacted: deleteField(),
+            acceptorContactedAt: deleteField(),
+            ownerConfirmedContact: deleteField(),
+            ownerConfirmedContactAt: deleteField(),
+            acceptorCompleted: deleteField(),
+            acceptorCompletedAt: deleteField(),
             updatedAt: serverTimestamp()
           });
 
@@ -605,19 +699,63 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             type: 'task_unaccepted',
             taskId: task.id,
             taskNum: task.taskNum || '',
-            taskContent: task.content || '',
+            taskContent: `承接超人 ${user.displayName || '在線超人'} 已取消承接委託 [${task.taskNum}]，任務已重置為開放中。`,
             senderId: user.uid,
-            senderName: user.displayName || user.email || '未知使用者',
+            senderName: user.displayName || user.email || '在線超人',
           });
 
-          // 2. Apply security cooling down if it's a quick cancel (prevent contact collection spam)
-          if (isQuickCancel) {
+          // 2. If cancelled within 10 mins, add +1 violation strike
+          if (isWithin10Mins) {
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-              lastCancelledAt: serverTimestamp(),
-              updatedAt: serverTimestamp()
-            });
-            // Update local storage
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const uData = userSnap.data();
+              const currentViolations = uData.noContactViolationsCount || uData.noContactStrikes || 0;
+              const newViolations = currentViolations + 1;
+
+              let penaltyStatus: 'none' | 'suspended' | 'banned' = 'none';
+              let bannedUntil: Date | null = null;
+              let penaltyApplied = '';
+
+              if (newViolations === 1) {
+                penaltyStatus = 'none';
+                penaltyApplied = '平台警告（第 1 次 10分鐘內棄單違規）';
+              } else if (newViolations === 2) {
+                penaltyStatus = 'none';
+                penaltyApplied = '平台警告（第 2 次 10分鐘內棄單違規）';
+              } else if (newViolations === 3) {
+                penaltyStatus = 'suspended';
+                bannedUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+                penaltyApplied = '限制承接任務 3 天（第 3 次違規）';
+              } else if (newViolations === 4) {
+                penaltyStatus = 'suspended';
+                bannedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+                penaltyApplied = '限制承接任務 7 天（第 4 次違規）';
+              } else {
+                penaltyStatus = 'banned';
+                penaltyApplied = '帳號永久封鎖（第 5 次違規）';
+              }
+
+              await updateDoc(userRef, {
+                noContactViolationsCount: newViolations,
+                noContactStrikes: newViolations,
+                penaltyStatus,
+                bannedUntil: bannedUntil ? bannedUntil : deleteField(),
+                lastCancelledAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+              });
+
+              await addDoc(collection(db, 'violation_logs'), {
+                userId: originalAcceptorId,
+                userName: user.displayName || '在線超人',
+                taskId: task.id,
+                taskNum: task.taskNum || '',
+                reporterId: 'system',
+                reason: '承接後 10 分鐘內取消承接 (棄單違規)',
+                penaltyApplied: penaltyApplied,
+                createdAt: serverTimestamp()
+              });
+            }
             localStorage.setItem(`lastCancelledAt_${user.uid}`, Date.now().toString());
           }
         } catch (error: any) {
@@ -687,6 +825,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
   const handleDelete = async () => {
     if (!user || user.uid !== task.requesterId) return;
+
+    if (task.ownerConfirmedContact || task.acceptorCompleted) {
+      setConfirmConfig({
+        title: '無法刪除任務 🔒',
+        message: task.acceptorCompleted 
+          ? '承接者已回報「任務已完成」，為保障超人權益，本階段不開放單方面直接取消或刪除任務。'
+          : '您已確認「承接者已聯繫」，任務已進入正式執行與鎖定階段，無法直接刪除！',
+        onConfirm: () => {},
+        showCancel: false
+      });
+      return;
+    }
     
     setConfirmConfig({
       title: '刪除委託',
@@ -722,10 +872,12 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const handleCancelByOwner = async () => {
     if (!user || user.uid !== task.requesterId) return;
     
-    if (task.acceptorCompleted) {
+    if (task.ownerConfirmedContact || task.acceptorCompleted) {
       setConfirmConfig({
         title: '無法取消任務 🔒',
-        message: '承接者已回報「任務已完成」，為保障超人權益，本階段不開放單方面直接取消或刪除任務。如有異議，請先點擊下方「對完工狀態提出異議 (自主協商)」與承接者取得聯繫並溝通解決方案。',
+        message: task.acceptorCompleted 
+          ? '承接者已回報「任務已完成」，為保障承接者權益，本階段不開放單方面直接取消或刪除任務。請於確認無誤後點擊「確認完成結案」。'
+          : '您已確認「承接者已聯繫」，任務已進入正式執行與鎖定階段，不開放單方面直接取消或刪除。若有特殊需求請先與承接者協商。',
         onConfirm: () => {},
         showCancel: false
       });
@@ -734,7 +886,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
     setConfirmConfig({
       title: '確認要取消並刪除此任務嗎？',
-      message: '⚠️ 提醒：此任務已在進行中（已由超人承接）。若承接者已付出勞動，請務必先與其溝通。隨意取消可能會被投訴並限制發布權限。是否仍要取消並刪除？',
+      message: '⚠️ 提醒：此任務已在進行中（已由承接者承接）。若承接者已付出勞動，請務必先與其溝通。隨意取消可能會被投訴並限制發布權限。是否仍要取消並刪除？',
       variant: 'danger',
       onConfirm: async () => {
         try {
@@ -758,6 +910,39 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             onConfirm: () => {},
             showCancel: false
           });
+        }
+      }
+    });
+  };
+
+  const handleOwnerConfirmContact = async () => {
+    if (!user || user.uid !== task.requesterId) return;
+
+    setConfirmConfig({
+      title: '確認承接者已聯繫？',
+      message: '確認聯繫後，任務將正式進入【執行鎖定階段】，為維護履約品質與秩序，雙方將無法單方面直接取消或刪除任務。',
+      onConfirm: async () => {
+        try {
+          const taskRef = doc(db, 'tasks', task.id);
+          await updateDoc(taskRef, {
+            ownerConfirmedContact: true,
+            ownerConfirmedContactAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+
+          if (task.acceptorId) {
+            await sendNotification({
+              userId: task.acceptorId,
+              type: 'task_accepted',
+              taskId: task.id,
+              taskNum: task.taskNum || '',
+              taskContent: `委託人已按下「確認承接者已聯繫」，任務正式鎖定並啟動執行！`,
+              senderId: user.uid,
+              senderName: user.displayName || user.email || '委託人',
+            });
+          }
+        } catch (error: any) {
+          console.error('Failed to confirm contact:', error);
         }
       }
     });
@@ -940,51 +1125,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     });
   };
 
-  const handleRaiseDispute = async () => {
-    if (!user || user.uid !== task.requesterId) return;
-
-    setConfirmConfig({
-      title: '確定要對完工狀態提出異議嗎？',
-      message: '⚠️ 提醒您：本平台僅提供免費媒合管道，官方不介入、不仲裁任何履約與款項糾紛。提出異議後：\n1. 委託將標記為【完工異議中】並鎖定狀態。\n2. 系統會發送通知給承接者，引導雙方主動聯繫、友好協商。您可向承接者要求提供服務證明，或與其討論折衷方案。\n\n確認要提出異議並自主協商嗎？',
-      variant: 'danger',
-      onConfirm: async () => {
-        try {
-          const taskRef = doc(db, 'tasks', task.id);
-          await updateDoc(taskRef, {
-            hasDispute: true,
-            disputeReason: '委託人對承接者回報的完工狀態提出異議，雙方自主協商中',
-            updatedAt: serverTimestamp()
-          });
-
-          if (task.acceptorId) {
-            await sendNotification({
-              userId: task.acceptorId,
-              type: 'task_unaccepted',
-              taskId: task.id,
-              taskNum: task.taskNum || '',
-              taskContent: `委託者已對您的任務 [${task.taskNum}] 提出【完工異議】。本平台無客服介入機制，請雙方主動聯繫、友好溝通。`,
-              senderId: user.uid,
-              senderName: user.displayName || '委託人',
-            });
-          }
-
-          // Send confirmation notification to requester
-          await sendNotification({
-            userId: user.uid,
-            type: 'task_unaccepted',
-            taskId: task.id,
-            taskNum: task.taskNum || '',
-            taskContent: `您已向承接者提出【完工異議】，任務 [${task.taskNum}] 已進入雙方自主協商階段。`,
-            senderId: 'system',
-            senderName: '系統紀錄',
-          });
-        } catch (error: any) {
-          console.error('Failed to raise dispute:', error);
-        }
-      }
-    });
-  };
-
 
   const formatDate = (dateValue: any) => {
     try {
@@ -1108,13 +1248,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                     {!task.acceptorContacted ? (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-2">
                         <p className="text-[10px] text-amber-800 leading-relaxed font-bold">
-                          ⚠️ 提醒：承接後請務必盡速主動聯繫委託人。若 1 小時未聯繫，委託人可回報無故未聯繫；若 24 小時未聯繫，系統將自動重開任務並上記信用違規。
+                          ⚠️ 提醒：請於承接後 24 小時內主動聯繫委託人並按下「我已主動聯繫委託人」。若 1 小時未聯繫，委託人可回報無故未聯繫；若 24 小時未聯繫，系統將自動重開任務並上記信用違規。
                         </p>
                         <button
                           onClick={handleReportContacted}
                           className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-black transition-all transform active:scale-95 shadow-sm"
                         >
-                          我已主動聯繫委託人 (點此回報)
+                          我已主動聯繫委託人
                         </button>
                       </div>
                     ) : (
@@ -1131,22 +1271,10 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 {isOwner && (
                   <div className="mb-2 space-y-2">
                     {!task.acceptorContacted ? (
-                      <div className={`p-3 border rounded-xl space-y-2 transition-all duration-300 ${canReportNoContact ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-200'}`}>
-                        <p className={`text-[10px] leading-relaxed font-bold ${canReportNoContact ? 'text-red-700' : 'text-slate-500'}`}>
-                          {canReportNoContact 
-                            ? '⌛ 承接者已超過 1 小時未回報聯繫，您現在可以「一鍵重啟委託」，釋放名額並對違規超人進行系統懲罰。' 
-                            : `⌛ 承接者尚未回報聯繫。為了保障超人權益，系統已啟動 1 小時安全等待機制。\n(${timeLeftToReport})`}
+                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                        <p className="text-[10px] leading-relaxed font-bold text-slate-600">
+                          ⌛ 承接人尚未按下「我已主動聯繫委託人」。承接者須於 24 小時內主動聯繫並回報；當承接者回報後，請您於 1 小時內點擊「確認承接者已主動聯繫」。
                         </p>
-                        <button
-                          onClick={handleReportNoContact}
-                          className={`w-full py-1.5 text-white rounded-lg text-[10px] font-black transition-all shadow-sm ${
-                            canReportNoContact 
-                              ? 'bg-red-600 hover:bg-red-700 active:scale-95 transform' 
-                              : 'bg-slate-300 cursor-not-allowed'
-                          }`}
-                        >
-                          回報「無故未聯繫」並重開委託 🚨
-                        </button>
                       </div>
                     ) : (
                       <>
@@ -1156,24 +1284,33 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                             {task.acceptorContactedAt ? formatDate(task.acceptorContactedAt) : ''}
                           </span>
                         </div>
-                        {!task.acceptorCompleted && (
-                          <div className={`p-2.5 border rounded-xl space-y-1.5 transition-all ${canReportStaleProgress ? 'bg-amber-50 border-amber-200' : 'bg-slate-50/80 border-slate-200/80'}`}>
-                            <p className="text-[10px] font-bold text-slate-600 leading-relaxed">
-                              {canReportStaleProgress 
-                                ? '🚨 承接者已超過 48 小時未完工或無回應。若任務已卡死，您可以申請一鍵重開委託。' 
-                                : `⌛ 承接者施工中。若承接者超過 48 小時無進展，您可解鎖申請重開委託 (倒數 ${staleProgressTimeLeft})。`}
+
+                        {!task.ownerConfirmedContact ? (
+                          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-2">
+                            <p className="text-[10px] text-blue-800 leading-relaxed font-bold">
+                              📢 請於承接者按下「我已主動聯繫委託人」後的 1 小時內點擊下方按鈕。若超過 1 小時未確認，系統將自動重開委託。確認後，將正式進入【執行鎖定階段】。
                             </p>
                             <button
-                              onClick={handleReportStaleProgress}
-                              disabled={!canReportStaleProgress}
-                              className={`w-full py-1.5 rounded-lg text-[10px] font-black transition-all shadow-sm ${
-                                canReportStaleProgress
-                                  ? 'bg-amber-600 hover:bg-amber-700 text-white transform active:scale-95'
-                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                              }`}
+                              onClick={handleOwnerConfirmContact}
+                              className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black transition-all transform active:scale-95 shadow-sm"
                             >
-                              逾 48 小時無完工進展，申請重開委託 🔄
+                              確認承接者已主動聯繫 (點此鎖定執行) 🔒
                             </button>
+                          </div>
+                        ) : (
+                          <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
+                            <span>🔒 雙方已確認聯繫 (任務已鎖定執行)</span>
+                            <span className="text-[9px] text-indigo-500 font-mono">
+                              {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
+                            </span>
+                          </div>
+                        )}
+
+                        {!task.acceptorCompleted && (
+                          <div className="p-2.5 bg-amber-50/80 border border-amber-200/80 rounded-xl space-y-1 transition-all">
+                            <p className="text-[10px] font-bold text-amber-900 leading-relaxed">
+                              ⚡ <strong>預計結束時間自動重開保護中</strong>：若承接者未於預計結束時間內回報完工，系統將於 <span className="font-bold font-mono text-amber-950 underline">{staleProgressTimeLeft || '預計結束時間到達時'}</span> 自動重開委託恢復為開放中！
+                            </p>
                           </div>
                         )}
                       </>
@@ -1236,23 +1373,12 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       <p className="text-[9px] text-emerald-500 font-normal">
                         已自動鎖定此委託。委託人目前無法直接取消或刪除任務，正等待委託人進行驗收結案...
                       </p>
-                      {!task.hasDispute && autoCompleteTimeLeft && (
+                      {autoCompleteTimeLeft && (
                         <div className="mt-1 p-1.5 bg-emerald-100/80 border border-emerald-200/80 rounded-lg text-[9px] text-emerald-800 font-medium">
-                          ⚡ <strong>防卡死保護中</strong>：若委託人未於 48 小時內回應，系統將於 <span className="font-bold font-mono text-emerald-950">{autoCompleteTimeLeft}</span> 後自動驗收結案！
+                          ⚡ <strong>預計結束時間自動結案保護中</strong>：若委託人未於預計結束時間內回應，系統將於 <span className="font-bold font-mono text-emerald-950">{autoCompleteTimeLeft}</span> 後自動驗收結案！
                         </div>
                       )}
                     </div>
-                    {task.hasDispute && (
-                      <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded-xl font-bold space-y-1 shadow-sm">
-                        <div className="flex items-center gap-1 text-red-600">
-                          <ShieldAlert size={12} className="shrink-0" />
-                          <span>🚨 委託人已提出「完工狀態異議」</span>
-                        </div>
-                        <p className="leading-relaxed font-normal text-slate-600">
-                          因委託人對完工結果有不同看法，本委託已進入雙方自主協商階段。平台為免費媒合空間，無客服介入仲裁，請您主動與委託人聯繫，以和為貴、友好協調出雙方滿意的解決方案。
-                        </p>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -1284,34 +1410,15 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                     {task.acceptorCompleted && (
                       <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl space-y-1.5 mb-1.5">
                         <div className="flex items-center gap-1.5 text-amber-800 font-black text-xs">
-                          <span>📢 承接超人已回報任務完工！</span>
+                          <span>📢 承接人已回報任務完工！</span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
-                          系統已鎖定單方面直接刪除以維護雙方權益。請在確認任務成果符合預期後，點擊「確認完成結案」；若有爭議，可提出「完工異議」與承接者友好協調。
+                          系統已鎖定單方面直接刪除以維護雙方權益。請在確認任務成果符合預期後，點擊「確認完成結案」。
                         </p>
-                        {!task.hasDispute && autoCompleteTimeLeft && (
+                        {autoCompleteTimeLeft && (
                           <div className="p-2 bg-amber-100/80 border border-amber-200/80 rounded-lg text-[10px] text-amber-900 font-bold flex items-center gap-1 shadow-xs">
-                            <span>⚡ 防卡死提醒：若超過 48 小時無異議，系統將於 <span className="font-mono text-amber-950 underline">{autoCompleteTimeLeft}</span> 後自動審核完成結案。</span>
+                            <span>⚡ 預計結束時間自動結案提醒：若未於預計結束時間內驗收，系統將於 <span className="font-mono text-amber-950 underline">{autoCompleteTimeLeft}</span> 後自動審核完成結案。</span>
                           </div>
-                        )}
-                        {task.hasDispute ? (
-                          <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-[10px] rounded-lg font-bold flex flex-col gap-1">
-                            <div className="flex items-center gap-1">
-                              <ShieldAlert size={12} className="shrink-0" />
-                              <span>⚠️ 已向承接者提出「完工異議」</span>
-                            </div>
-                            <p className="font-normal text-slate-600 leading-relaxed">
-                              本平台僅提供免費媒合管道，不介入與仲裁雙方之履約或款項糾紛。請您主動與承接者聯繫，友好溝通並釐清問題。待共識達成後，仍可點擊「確認完成結案」以完成本次委託。
-                            </p>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={handleRaiseDispute}
-                            className="w-full py-1.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded-lg text-[10px] font-black transition-all transform active:scale-95 flex items-center justify-center gap-1"
-                          >
-                            <ShieldAlert size={12} />
-                            對完工狀態提出異議 (自主協商)
-                          </button>
                         )}
                       </div>
                     )}
@@ -1325,10 +1432,10 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       </button>
                       <button
                         onClick={handleCancelByOwner}
-                        disabled={!!task.acceptorCompleted && !task.hasDispute}
+                        disabled={!!task.acceptorCompleted}
                         className={cn(
                           "py-2.5 rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1",
-                          task.acceptorCompleted 
+                          task.acceptorCompleted  
                             ? "bg-slate-100 text-slate-400 cursor-not-allowed active:scale-100"
                             : "bg-red-50 hover:bg-red-100 text-red-600"
                         )}
