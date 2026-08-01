@@ -649,10 +649,10 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           );
           const activeTasksSnapshot = await getDocs(activeTasksQuery);
           
-          if (!activeTasksSnapshot.empty) {
+          if (activeTasksSnapshot.size >= 5) {
             setConfirmConfig({
-              title: '操作限制',
-              message: '您目前已有正在進行中的任務。請先完成或取消該任務後，再承接新的任務。',
+              title: '已達承接上限 ⚠️',
+              message: '每位使用者同時最多僅能承接 5 件進行中的任務。請待現有任務完成驗收或結案後，再承接新任務！',
               onConfirm: () => {},
               showCancel: false
             });
