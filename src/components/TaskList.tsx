@@ -25,7 +25,7 @@ import { TASK_CATEGORIES } from '../config/achievements';
 import { cn } from '../lib/utils';
 
 interface TaskListProps {
-  filter: 'all' | 'open' | 'accepted' | 'my-tasks';
+  filter: 'all' | 'open' | 'accepted' | 'my-tasks' | 'my-accepted';
   searchQuery: string;
   categoryFilter?: string;
   regionFilter?: string;
@@ -81,6 +81,16 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
         where('status', 'in', ['open', 'accepted']),
         orderBy('createdAt', 'desc')
       );
+    } else if (filter === 'my-accepted') {
+      if (!user) {
+        setLoading(false);
+        setTasks([]);
+        return;
+      }
+      q = query(
+        tasksRef, 
+        where('acceptorId', '==', user.uid)
+      );
     } else {
       // filter is 'open' or 'accepted'
       q = query(
@@ -91,10 +101,19 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(doc => ({
+      let docs = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       })) as Task[];
+
+      if (filter === 'my-accepted') {
+        docs.sort((a, b) => {
+          const timeA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime());
+          const timeB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime());
+          return timeB - timeA;
+        });
+      }
+
       setTasks(docs);
       setLoading(false);
     }, (error) => {
@@ -167,8 +186,16 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     return (
       <div className="flex flex-col items-center justify-center py-20 text-gray-400 bg-gray-50 rounded-2xl border-2 border-dashed">
         <Inbox size={48} className="mb-4 opacity-20" />
-        <p className="text-sm font-medium">目前沒有任務需求</p>
-        <p className="text-xs mt-1">成為第一個發布任務的人吧！</p>
+        <p className="text-sm font-medium">
+          {filter === 'my-accepted' 
+            ? '您目前尚未承接任何委託任務' 
+            : (filter === 'my-tasks' ? '您目前尚未發佈任何任務需求' : '目前沒有任務需求')}
+        </p>
+        <p className="text-xs mt-1">
+          {filter === 'my-accepted' 
+            ? '去「尋找委託任務」大廳承接您感興趣的案件吧！' 
+            : '成為第一個發布任務的人吧！'}
+        </p>
       </div>
     );
   }

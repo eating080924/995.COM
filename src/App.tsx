@@ -26,7 +26,7 @@ function AppContent() {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBroadcastForm, setShowBroadcastForm] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'privacy'>('all');
+  const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'my-accepted' | 'privacy'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [regionFilter, setRegionFilter] = useState('');
@@ -43,7 +43,7 @@ function AppContent() {
   }, [user]);
 
   React.useEffect(() => {
-    if (!user && (activeTab === 'my-tasks' || activeTab === 'privacy')) {
+    if (!user && (activeTab === 'my-tasks' || activeTab === 'my-accepted' || activeTab === 'privacy')) {
       setActiveTab('all');
     }
   }, [user, activeTab]);
@@ -219,15 +219,15 @@ function AppContent() {
             <div className="space-y-1">
               <button 
                 onClick={handleGoHome}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${(activeTab !== 'my-tasks' && activeTab !== 'my-accepted' && activeTab !== 'privacy') ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
                 回到首頁
               </button>
               <button 
                 onClick={() => requireLogin(() => setActiveTab('my-tasks'))}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'my-tasks' ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${(activeTab === 'my-tasks' || activeTab === 'my-accepted') ? 'bg-red-50 text-red-600' : 'hover:bg-slate-50 text-slate-600'}`}
               >
-                個人委託
+                追蹤我的需求
               </button>
               <button 
                 onClick={() => requireLogin(() => setActiveTab('privacy'))}
@@ -277,9 +277,9 @@ function AppContent() {
               <h2 className="text-lg font-black text-slate-800 tracking-tight">
                 {activeTab === 'privacy' 
                   ? '個人隱私與帳戶管理' 
-                  : (activeTab === 'my-tasks' ? '追蹤我的需求' : '尋找委託任務')}
+                  : ((activeTab === 'my-tasks' || activeTab === 'my-accepted') ? '追蹤我的需求' : '尋找委託任務')}
               </h2>
-              {(activeTab === 'all' || activeTab === 'open' || activeTab === 'accepted') && (
+              {(activeTab === 'all' || activeTab === 'open' || activeTab === 'accepted' || activeTab === 'my-tasks' || activeTab === 'my-accepted') && (
                 <div className="mt-4 flex flex-col sm:flex-row gap-3 max-w-2xl">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -320,12 +320,12 @@ function AppContent() {
             </div>
           </div>
 
-          {(activeTab === 'my-tasks' || activeTab === 'privacy') && (
-            <div className="flex bg-slate-100 p-1 rounded-2xl max-w-xs">
+          {(activeTab === 'my-tasks' || activeTab === 'my-accepted' || activeTab === 'privacy') && (
+            <div className="flex bg-slate-100 p-1 rounded-2xl max-w-md w-full overflow-x-auto">
               <button
                 type="button"
                 onClick={() => setActiveTab('my-tasks')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
                   activeTab === 'my-tasks' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
@@ -333,8 +333,17 @@ function AppContent() {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('my-accepted')}
+                className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
+                  activeTab === 'my-accepted' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                我承接的委託列表
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('privacy')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-xl transition-all ${
+                className={`flex-1 py-1.5 px-3 text-xs font-bold rounded-xl transition-all whitespace-nowrap ${
                   activeTab === 'privacy' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
@@ -366,9 +375,9 @@ function AppContent() {
       <nav className="md:hidden bg-white border-t border-slate-200/80 flex justify-around items-center h-20 fixed bottom-0 left-0 right-0 z-50 px-2 pb-safe shadow-[0_-4px_16px_rgba(15,23,42,0.06)]">
         <button 
           onClick={handleGoHome} 
-          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
+          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab !== 'my-tasks' && activeTab !== 'my-accepted' && activeTab !== 'privacy') ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
         >
-          <Home size={20} fill={(activeTab !== 'my-tasks' && activeTab !== 'privacy') ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
+          <Home size={20} fill={(activeTab !== 'my-tasks' && activeTab !== 'my-accepted' && activeTab !== 'privacy') ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
           <span className="text-[10px] tracking-wider">主頁</span>
         </button>
         <div className="flex flex-col items-center gap-1 group relative">
@@ -382,10 +391,10 @@ function AppContent() {
         </div>
         <button 
           onClick={() => requireLogin(() => setActiveTab('my-tasks'))} 
-          className={`flex flex-col items-center gap-1 group transition-colors ${activeTab === 'my-tasks' ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
+          className={`flex flex-col items-center gap-1 group transition-colors ${(activeTab === 'my-tasks' || activeTab === 'my-accepted') ? 'text-slate-900 font-black' : 'text-slate-400 font-bold hover:text-slate-600'}`}
         >
-          <UserIcon size={20} fill={activeTab === 'my-tasks' ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
-          <span className="text-[10px] tracking-wider">個人委託</span>
+          <UserIcon size={20} fill={(activeTab === 'my-tasks' || activeTab === 'my-accepted') ? 'currentColor' : 'none'} className="transition-transform group-active:scale-90" />
+          <span className="text-[10px] tracking-wider">追蹤需求</span>
         </button>
         <button 
           onClick={() => requireLogin(() => setActiveTab('privacy'))} 
