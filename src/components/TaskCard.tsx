@@ -258,6 +258,33 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     }
   };
 
+  // Helper function to safely parse any date format (Timestamp, Date, String, Number)
+  const parseTaskDate = (dateVal: any): Date | null => {
+    if (!dateVal) return null;
+    try {
+      if (typeof dateVal.toDate === 'function') {
+        const d = dateVal.toDate();
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (dateVal instanceof Date) {
+        return isNaN(dateVal.getTime()) ? null : dateVal;
+      }
+      if (typeof dateVal === 'number') {
+        const d = new Date(dateVal);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      if (typeof dateVal === 'string') {
+        const formatted = dateVal.includes(' ') && !dateVal.includes('T') ? dateVal.replace(' ', 'T') : dateVal;
+        const d = new Date(formatted);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const d = new Date(dateVal);
+      return isNaN(d.getTime()) ? null : d;
+    } catch (e) {
+      return null;
+    }
+  };
+
   useEffect(() => {
     if (task.status !== 'accepted' || !task.acceptorId) {
       setCanReportNoContact(false);
@@ -272,9 +299,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       const now = Date.now();
 
       // (A) 承接者 24 小時未回報聯繫自動重開
-      const acceptedTime = task.acceptedAt?.toDate 
-        ? task.acceptedAt.toDate() 
-        : (task.acceptedAt ? new Date(task.acceptedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date(task.updatedAt || task.createdAt)));
+      const acceptedTime = parseTaskDate(task.acceptedAt) || parseTaskDate(task.updatedAt) || parseTaskDate(task.createdAt) || new Date();
       
       const oneHourMs = 60 * 60 * 1000;
       const twentyFourHoursMs = 24 * 60 * 60 * 1000;
@@ -298,9 +323,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
       // (B) 委託者 1 小時未「確認承接者已聯繫」自動重開
       if (task.acceptorContacted && !task.ownerConfirmedContact && task.acceptorContactedAt) {
-        const contactedTime = task.acceptorContactedAt?.toDate
-          ? task.acceptorContactedAt.toDate()
-          : (task.acceptorContactedAt ? new Date(task.acceptorContactedAt) : acceptedTime);
+        const contactedTime = parseTaskDate(task.acceptorContactedAt) || acceptedTime;
 
         const elapsedContact = now - contactedTime.getTime();
         if (elapsedContact >= oneHourMs) {
@@ -311,7 +334,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
       // (C) 承接者已回報完成，依據「預計結束時間 (deadlineEnd)」進行自動驗收結案計時
       if (task.acceptorCompleted) {
-        const deadlineDate = task.deadlineEnd ? new Date(task.deadlineEnd) : null;
+        const deadlineDate = parseTaskDate(task.deadlineEnd);
         
         if (deadlineDate) {
           const remainingComplete = deadlineDate.getTime() - now;
@@ -319,15 +342,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             triggerAutoCompletion();
             return;
           } else {
-            const hoursLeft = Math.floor(remainingComplete / (1000 * 60 * 60));
-            const minsLeft = Math.ceil((remainingComplete % (1000 * 60 * 60)) / (1000 * 60));
-            setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            const totalMins = Math.ceil(remainingComplete / (1000 * 60));
+            const hoursLeft = Math.floor(totalMins / 60);
+            const minsLeft = totalMins % 60;
+            if (hoursLeft > 0) {
+              setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            } else {
+              setAutoCompleteTimeLeft(`${minsLeft} 分鐘`);
+            }
           }
         } else {
           // 相容舊資料未設定 deadlineEnd：完工後 48 小時自動結案
-          const completedTime = task.acceptorCompletedAt?.toDate
-            ? task.acceptorCompletedAt.toDate()
-            : (task.acceptorCompletedAt ? new Date(task.acceptorCompletedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date()));
+          const completedTime = parseTaskDate(task.acceptorCompletedAt) || parseTaskDate(task.updatedAt) || new Date();
           
           const fortyEightHoursMs = 48 * 60 * 60 * 1000;
           const elapsedComplete = now - completedTime.getTime();
@@ -337,16 +363,21 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             triggerAutoCompletion();
             return;
           } else {
-            const hoursLeft = Math.floor(remainingComplete / (1000 * 60 * 60));
-            const minsLeft = Math.ceil((remainingComplete % (1000 * 60 * 60)) / (1000 * 60));
-            setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            const totalMins = Math.ceil(remainingComplete / (1000 * 60));
+            const hoursLeft = Math.floor(totalMins / 60);
+            const minsLeft = totalMins % 60;
+            if (hoursLeft > 0) {
+              setAutoCompleteTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            } else {
+              setAutoCompleteTimeLeft(`${minsLeft} 分鐘`);
+            }
           }
         }
       }
 
       // (D) 承接者未回報完成，依據「預計結束時間 (deadlineEnd)」進行系統自動重開委託計時
       if (!task.acceptorCompleted) {
-        const deadlineDate = task.deadlineEnd ? new Date(task.deadlineEnd) : null;
+        const deadlineDate = parseTaskDate(task.deadlineEnd);
         if (deadlineDate) {
           const remainingContact = deadlineDate.getTime() - now;
           if (remainingContact <= 0) {
@@ -354,15 +385,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             return;
           } else {
             setCanReportStaleProgress(false);
-            const hoursLeft = Math.floor(remainingContact / (1000 * 60 * 60));
-            const minsLeft = Math.ceil((remainingContact % (1000 * 60 * 60)) / (1000 * 60));
-            setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            const totalMins = Math.ceil(remainingContact / (1000 * 60));
+            const hoursLeft = Math.floor(totalMins / 60);
+            const minsLeft = totalMins % 60;
+            if (hoursLeft > 0) {
+              setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            } else {
+              setStaleProgressTimeLeft(`${minsLeft} 分鐘`);
+            }
           }
         } else if (task.acceptorContacted) {
           // 若無 deadlineEnd，相容舊邏輯以聯繫時間起算 48 小時自動重開
-          const contactedTime = task.acceptorContactedAt?.toDate
-            ? task.acceptorContactedAt.toDate()
-            : (task.acceptorContactedAt ? new Date(task.acceptorContactedAt) : acceptedTime);
+          const contactedTime = parseTaskDate(task.acceptorContactedAt) || acceptedTime;
 
           const fortyEightHoursMs = 48 * 60 * 60 * 1000;
           const elapsedContact = now - contactedTime.getTime();
@@ -373,9 +407,14 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             return;
           } else {
             setCanReportStaleProgress(false);
-            const hoursLeft = Math.floor(remainingContact / (1000 * 60 * 60));
-            const minsLeft = Math.ceil((remainingContact % (1000 * 60 * 60)) / (1000 * 60));
-            setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            const totalMins = Math.ceil(remainingContact / (1000 * 60));
+            const hoursLeft = Math.floor(totalMins / 60);
+            const minsLeft = totalMins % 60;
+            if (hoursLeft > 0) {
+              setStaleProgressTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+            } else {
+              setStaleProgressTimeLeft(`${minsLeft} 分鐘`);
+            }
           }
         }
       }
@@ -930,7 +969,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
     setConfirmConfig({
       title: '確認承接者已聯繫？',
-      message: '確認聯繫後，任務將正式進入【執行鎖定階段】，為維護履約品質與秩序，雙方將無法單方面直接取消或刪除任務。',
+      message: '確認聯繫後，任務將正式進入【執行階段】。',
       onConfirm: async () => {
         try {
           const taskRef = doc(db, 'tasks', task.id);
@@ -1106,6 +1145,16 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
   const handleReportCompleted = async () => {
     if (!user || user.uid !== task.acceptorId) return;
+
+    if (!task.ownerConfirmedContact) {
+      setConfirmConfig({
+        title: '前置關卡未解鎖 🔒',
+        message: '需待委託人點擊「確認承接者已主動聯繫」後，方可解鎖「回報任務已完成」按鈕。',
+        onConfirm: () => {},
+        showCancel: false
+      });
+      return;
+    }
 
     setConfirmConfig({
       title: '確認已完成任務並回報？',
@@ -1309,7 +1358,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                           </div>
                         ) : (
                           <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
-                            <span>雙方已確認聯繫</span>
+                            <span>✔️ 雙方已確認聯繫</span>
                             <span className="text-[9px] text-indigo-500 font-mono">
                               {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
                             </span>
@@ -1345,20 +1394,20 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               <div className="flex flex-col gap-2 mt-1">
                 {!task.acceptorCompleted ? (
                   <>
-                    {!task.acceptorContacted && (
-                      <div className="p-3 bg-red-50 text-red-700 text-[10px] font-bold rounded-xl border border-red-200 flex items-start gap-1.5 leading-relaxed shadow-sm">
+                    {!task.ownerConfirmedContact && (
+                      <div className="p-3 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-xl border border-amber-200 flex items-start gap-1.5 leading-relaxed shadow-sm">
                         <span className="text-sm shrink-0">🔒</span>
                         <span>
-                          <strong>前置關卡未解鎖</strong>：回報完成前，您必須先點擊上方的「我已主動聯繫委託人」按鈕，確認雙方已取得聯繫。
+                          <strong>前置關卡未解鎖</strong>：需待委託人點擊「確認承接者已主動聯繫」後，方可解鎖「回報任務已完成」按鈕。
                         </span>
                       </div>
                     )}
                     <button
-                      disabled={!task.acceptorContacted}
+                      disabled={!task.ownerConfirmedContact}
                       onClick={handleReportCompleted}
                       className={cn(
                         "w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 shadow-sm",
-                        task.acceptorContacted
+                        task.ownerConfirmedContact
                           ? "bg-green-600 hover:bg-green-700 text-white transform active:scale-95 cursor-pointer"
                           : "bg-slate-200 text-slate-400 cursor-not-allowed"
                       )}

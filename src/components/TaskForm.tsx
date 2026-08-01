@@ -4,6 +4,7 @@ import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp, query, 
 import { db } from '../lib/firebase';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
+import { sendNotification } from '../lib/notificationService';
 import { X, Loader2, AlertTriangle, Layers, MapPin } from 'lucide-react';
 import { Task } from '../types';
 import { isUserUnlimited } from '../config/unlimitedUsers';
@@ -192,7 +193,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
         }
 
         const taskNum = generateTaskNum();
-        await addDoc(collection(db, 'tasks'), {
+        const taskDocRef = await addDoc(collection(db, 'tasks'), {
           ...data,
           deadlineStart: Timestamp.fromDate(new Date(data.deadlineStart)),
           deadlineEnd: Timestamp.fromDate(new Date(data.deadlineEnd)),
@@ -235,11 +236,27 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               category: data.category,
               region: data.region,
               taskNum,
+              taskId: taskDocRef.id,
               taskContent: data.content,
               senderId: user.uid,
               senderName: user.displayName || '平台用戶',
             }),
           }).catch((err) => console.warn('Failed to send matching push notification:', err));
+
+          // Also write client-side in-app notifications to Firestore
+          if (matchedUserIds.length > 0) {
+            matchedUserIds.forEach((matchedUid) => {
+              sendNotification({
+                userId: matchedUid,
+                type: 'broadcast',
+                taskId: taskDocRef.id,
+                taskNum,
+                taskContent: `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`,
+                senderId: user.uid,
+                senderName: user.displayName || '平台用戶',
+              }).catch((e) => console.warn('In-app notification failed:', e));
+            });
+          }
         } catch (pushErr) {
           console.warn('Matching push trigger failed:', pushErr);
         }

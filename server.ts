@@ -384,6 +384,35 @@ async function startServer() {
 
     try {
       const matchedUserIds = new Set<string>(userIdsArray);
+
+      // Create in-app notifications in Firestore for all matched users so Notification Center has messages
+      const notifPromises = Array.from(matchedUserIds).map(async (uid) => {
+        try {
+          const notifUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/notifications?key=${FIREBASE_API_KEY}`;
+          const notifBody = {
+            fields: {
+              userId: { stringValue: uid },
+              type: { stringValue: "broadcast" },
+              taskId: { stringValue: req.body.taskId || "" },
+              taskNum: { stringValue: taskNum },
+              taskContent: { stringValue: `🎯 任務推薦：【${category}】在【${region}】有新發布任務「${taskNum}」：\n${safeTaskContent.slice(0, 40)}${safeTaskContent.length > 40 ? "..." : ""}` },
+              read: { booleanValue: false },
+              senderId: { stringValue: senderId || "" },
+              senderName: { stringValue: safeSenderName },
+              createdAt: { timestampValue: new Date().toISOString() }
+            }
+          };
+          await fetch(notifUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(notifBody)
+          });
+        } catch (nErr) {
+          console.warn(`Failed to insert in-app notification for user ${uid}:`, nErr);
+        }
+      });
+      await Promise.allSettled(notifPromises);
+
       const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
 
       // Fetch push subscriptions for all matched users

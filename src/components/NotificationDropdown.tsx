@@ -238,12 +238,19 @@ export function NotificationDropdown() {
           badgeColor: 'bg-red-500',
           desc: `${n.senderName} 向您發出了專屬推播訊息！請點擊查看。`,
         };
+      case 'broadcast':
+        return {
+          title: '任務推薦 🎯',
+          color: 'bg-purple-50 text-purple-700 border-purple-100',
+          badgeColor: 'bg-purple-500',
+          desc: n.taskContent || `有符合您偏好的新發布任務：[${n.taskNum}]`,
+        };
       default:
         return {
-          title: '系統通知',
+          title: '系統通知 📢',
           color: 'bg-slate-50 text-slate-700 border-slate-100',
           badgeColor: 'bg-slate-500',
-          desc: `任務 [${n.taskNum}] 有狀態異動。`,
+          desc: n.taskContent || `任務 [${n.taskNum}] 有狀態異動。`,
         };
     }
   };
