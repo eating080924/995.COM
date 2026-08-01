@@ -338,7 +338,7 @@ function AppContent() {
                   activeTab === 'my-accepted' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'
                 }`}
               >
-                我承接的委託列表
+                我的承接列表
               </button>
               <button
                 type="button"

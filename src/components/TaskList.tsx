@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Task } from '../types';
@@ -51,6 +51,12 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [localSelectedCategory, setLocalSelectedCategory] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'accepted' | 'completed' | 'timeout' | 'delete'>('all');
+
+  // Reset status filter when list mode changes
+  useEffect(() => {
+    setStatusFilter('all');
+  }, [filter]);
 
   // Handle external category filter changes by synchronizing local state
   useEffect(() => {
@@ -77,9 +83,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
       }
       q = query(
         tasksRef, 
-        where('requesterId', '==', user.uid),
-        where('status', 'in', ['open', 'accepted']),
-        orderBy('createdAt', 'desc')
+        where('requesterId', '==', user.uid)
       );
     } else if (filter === 'my-accepted') {
       if (!user) {
@@ -106,7 +110,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
         ...doc.data()
       })) as Task[];
 
-      if (filter === 'my-accepted') {
+      if (filter === 'my-accepted' || filter === 'my-tasks') {
         docs.sort((a, b) => {
           const timeA = a.acceptedAt?.toDate ? a.acceptedAt.toDate().getTime() : (a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime());
           const timeB = b.acceptedAt?.toDate ? b.acceptedAt.toDate().getTime() : (b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime());
@@ -124,8 +128,37 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     return () => unsubscribe();
   }, [filter, user]);
 
+  const statusCounts = useMemo(() => {
+    const all = tasks.length;
+    const open = tasks.filter(t => t.status === 'open').length;
+    const accepted = tasks.filter(t => t.status === 'accepted').length;
+    const completed = tasks.filter(t => t.status === 'completed').length;
+    const timeout = tasks.filter(t => t.status === 'timeout').length;
+    const deleteCount = tasks.filter(t => t.status === 'delete').length;
+    return { all, open, accepted, completed, timeout, delete: deleteCount };
+  }, [tasks]);
+
   // Base filtering excluding the category constraint
   const baseFilteredTasks = tasks.filter(task => {
+    // Status Filter for my-accepted / my-tasks
+    if (filter === 'my-accepted' || filter === 'my-tasks') {
+      if (statusFilter === 'open' && task.status !== 'open') {
+        return false;
+      }
+      if (statusFilter === 'accepted' && task.status !== 'accepted') {
+        return false;
+      }
+      if (statusFilter === 'completed' && task.status !== 'completed') {
+        return false;
+      }
+      if (statusFilter === 'timeout' && task.status !== 'timeout') {
+        return false;
+      }
+      if (statusFilter === 'delete' && task.status !== 'delete') {
+        return false;
+      }
+    }
+
     // Filter out expired open tasks on display
     if (task.status === 'open' && task.deadlineEnd) {
        try {
@@ -200,10 +233,107 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
     );
   }
 
+  const renderStatusFilterBar = () => {
+    if (filter !== 'my-accepted' && filter !== 'my-tasks') return null;
+
+    return (
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-100 shadow-sm">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-black text-slate-500 shrink-0">案件狀態：</span>
+          <div className="flex bg-slate-100 p-1 rounded-xl gap-1 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                statusFilter === 'all' 
+                  ? 'bg-white text-slate-800 shadow-sm' 
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              全部 ({statusCounts.all})
+            </button>
+            {filter === 'my-tasks' && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('open')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                  statusFilter === 'open' 
+                    ? 'bg-emerald-600 text-white shadow-sm' 
+                    : 'text-emerald-600 hover:bg-emerald-50'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${statusFilter === 'open' ? 'bg-white' : 'bg-emerald-500'} inline-block`}></span>
+                開放中 ({statusCounts.open})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('accepted')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                statusFilter === 'accepted' 
+                  ? 'bg-blue-600 text-white shadow-sm' 
+                  : 'text-blue-600 hover:bg-blue-50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${statusFilter === 'accepted' ? 'bg-white' : 'bg-blue-500'} inline-block animate-pulse`}></span>
+              進行中 ({statusCounts.accepted})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('completed')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                statusFilter === 'completed' 
+                  ? 'bg-slate-700 text-white shadow-sm' 
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              已結案 ({statusCounts.completed})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('timeout')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                statusFilter === 'timeout' 
+                  ? 'bg-amber-600 text-white shadow-sm' 
+                  : 'text-amber-600 hover:bg-amber-50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${statusFilter === 'timeout' ? 'bg-white' : 'bg-amber-500'} inline-block`}></span>
+              已逾期 ({statusCounts.timeout})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('delete')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                statusFilter === 'delete' 
+                  ? 'bg-rose-600 text-white shadow-sm' 
+                  : 'text-rose-600 hover:bg-rose-50'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${statusFilter === 'delete' ? 'bg-white' : 'bg-rose-500'} inline-block`}></span>
+              已刪除 ({statusCounts.delete})
+            </button>
+          </div>
+        </div>
+        
+        <div className="text-xs text-slate-400 font-medium">
+          {statusFilter === 'open' && `已篩選顯示 ${statusCounts.open} 件「開放中」委託`}
+          {statusFilter === 'accepted' && `已篩選顯示 ${statusCounts.accepted} 件「進行中」委託`}
+          {statusFilter === 'completed' && `已篩選顯示 ${statusCounts.completed} 件「已結案」委託`}
+          {statusFilter === 'timeout' && `已篩選顯示 ${statusCounts.timeout} 件「已逾期」委託`}
+          {statusFilter === 'delete' && `已篩選顯示 ${statusCounts.delete} 件「已刪除」委託`}
+          {statusFilter === 'all' && `共 ${statusCounts.all} 件委託`}
+        </div>
+      </div>
+    );
+  };
+
   // FIRST LAYER: Category Overview View (No category selected)
   if (!activeCategory) {
     return (
       <div className="space-y-6">
+        {renderStatusFilterBar()}
+
         <div className="flex items-center gap-2 text-slate-800 mb-2">
           <Layers size={18} className="text-red-500 stroke-[2.5]" />
           <h2 className="text-sm font-black tracking-wider text-slate-400 uppercase">
@@ -285,6 +415,8 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
 
   return (
     <div className="space-y-6">
+      {renderStatusFilterBar()}
+
       {/* Navigation Breadcrumbs / Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
         <button
