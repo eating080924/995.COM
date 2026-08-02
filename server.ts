@@ -410,8 +410,8 @@ async function startServer() {
         } catch (nErr) {
           console.warn(`Failed to insert in-app notification for user ${uid}:`, nErr);
         }
-      });*/}
-      await Promise.allSettled(notifPromises);
+      });
+      await Promise.allSettled(notifPromises);*/}
 
       const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
 
