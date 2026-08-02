@@ -42,6 +42,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   // States and effects for Anti-Stuck & Auto-Timeout Mechanisms
   const [canReportNoContact, setCanReportNoContact] = useState(false);
   const [timeLeftToReport, setTimeLeftToReport] = useState<string>('');
+  const [ownerConfirmTimeLeft, setOwnerConfirmTimeLeft] = useState<string>('');
   const [autoCompleteTimeLeft, setAutoCompleteTimeLeft] = useState<string>('');
   const [canReportStaleProgress, setCanReportStaleProgress] = useState(false);
   const [staleProgressTimeLeft, setStaleProgressTimeLeft] = useState<string>('');
@@ -289,6 +290,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     if (task.status !== 'accepted' || !task.acceptorId) {
       setCanReportNoContact(false);
       setTimeLeftToReport('');
+      setOwnerConfirmTimeLeft('');
       setAutoCompleteTimeLeft('');
       setCanReportStaleProgress(false);
       setStaleProgressTimeLeft('');
@@ -322,14 +324,26 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       }
 
       // (B) 委託者 1 小時未「確認承接者已聯繫」自動重開
-      if (task.acceptorContacted && !task.ownerConfirmedContact && task.acceptorContactedAt) {
+      if (task.acceptorContacted && !task.ownerConfirmedContact) {
         const contactedTime = parseTaskDate(task.acceptorContactedAt) || acceptedTime;
 
         const elapsedContact = now - contactedTime.getTime();
-        if (elapsedContact >= oneHourMs) {
+        const remainingOwnerConfirm = oneHourMs - elapsedContact;
+        if (remainingOwnerConfirm <= 0) {
           triggerAutoOwnerUnconfirmedReset();
           return;
+        } else {
+          const totalMins = Math.ceil(remainingOwnerConfirm / (1000 * 60));
+          const hoursLeft = Math.floor(totalMins / 60);
+          const minsLeft = totalMins % 60;
+          if (hoursLeft > 0) {
+            setOwnerConfirmTimeLeft(`${hoursLeft} 小時 ${minsLeft} 分鐘`);
+          } else {
+            setOwnerConfirmTimeLeft(`${minsLeft} 分鐘`);
+          }
         }
+      } else {
+        setOwnerConfirmTimeLeft('');
       }
 
       // (C) 承接者已回報完成，依據「預計結束時間 (deadlineEnd)」進行自動驗收結案計時
@@ -423,7 +437,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     calculateTimers();
     const interval = setInterval(calculateTimers, 10000);
     return () => clearInterval(interval);
-  }, [task.status, task.acceptedAt, task.acceptorContacted, task.acceptorContactedAt, task.acceptorCompleted, task.acceptorCompletedAt, task.acceptorId]);
+  }, [task.status, task.acceptedAt, task.acceptorContacted, task.acceptorContactedAt, task.ownerConfirmedContact, task.ownerConfirmedContactAt, task.acceptorCompleted, task.acceptorCompletedAt, task.acceptorId]);
 
   // Acceptor profile state for displaying active title
   const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
@@ -1349,6 +1363,12 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                             <p className="text-[10px] text-blue-800 leading-relaxed font-bold">
                               📢 請於承接者按下「我已主動聯繫委託人」後的 1 小時內點擊下方按鈕。若超過 1 小時未確認，系統將自動重開委託。確認後，將正式進入【執行鎖定階段】。
                             </p>
+                            {ownerConfirmTimeLeft && (
+                              <div className="p-2 bg-blue-100/80 border border-blue-200/80 rounded-lg text-[10px] text-blue-900 font-bold flex items-center gap-1.5 shadow-xs">
+                                <span>⏱️ 委託人確認剩餘時間：</span>
+                                <span className="font-mono text-blue-950 underline font-black">{ownerConfirmTimeLeft}</span>
+                              </div>
+                            )}
                             <button
                               onClick={handleOwnerConfirmContact}
                               className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[10px] font-black transition-all transform active:scale-95 shadow-sm"
@@ -1394,11 +1414,26 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               <div className="flex flex-col gap-2 mt-1">
                 {!task.acceptorCompleted ? (
                   <>
-                    {!task.ownerConfirmedContact && (
-                      <div className="p-3 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-xl border border-amber-200 flex items-start gap-1.5 leading-relaxed shadow-sm">
-                        <span className="text-sm shrink-0">🔒</span>
-                        <span>
-                          <strong>前置關卡未解鎖</strong>：需待委託人點擊「確認承接者已主動聯繫」後，方可解鎖「回報任務已完成」按鈕。
+                    {!task.ownerConfirmedContact ? (
+                      <div className="p-3 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-xl border border-amber-200 flex flex-col gap-1.5 leading-relaxed shadow-sm">
+                        <div className="flex items-start gap-1.5">
+                          <span className="text-sm shrink-0">🔒</span>
+                          <span>
+                            <strong>前置關卡未解鎖</strong>：需待委託人於 1 小時內點擊「確認承接者已主動聯繫」後，方可解鎖「回報任務已完成」按鈕。若超過 1 小時委託人未確認，系統將自動重開委託。
+                          </span>
+                        </div>
+                        {ownerConfirmTimeLeft && (
+                          <div className="p-2 bg-amber-100/80 border border-amber-200/80 rounded-lg text-[10px] text-amber-900 font-bold flex items-center gap-1.5 shadow-xs">
+                            <span>⏱️ 委託人確認倒數計時：</span>
+                            <span className="font-mono text-amber-950 underline font-black">{ownerConfirmTimeLeft}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
+                        <span>✔️ 雙方已確認聯繫</span>
+                        <span className="text-[9px] text-indigo-500 font-mono">
+                          {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
                         </span>
                       </div>
                     )}
@@ -1413,7 +1448,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       )}
                     >
                       <CheckCircle size={14} />
-                      回報任務已完成 (鎖定刪除)
+                      回報任務已完成
                     </button>
                     <button
                       onClick={handleCancelAccept}
@@ -1470,6 +1505,11 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
                         <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
                           🔒 <strong>等待承接者完工中</strong>：需待承接者點擊「回報任務已完成」後，方可解鎖「確認完成結案」按鈕。
+                          {task.ownerConfirmedContact && (
+                            <span className="block mt-1 text-slate-600 font-semibold">
+                              🛡️ 已確認聯繫：系統已鎖定單方面「取消並刪除」功能以保障雙方權益。
+                            </span>
+                          )}
                         </p>
                       </div>
                     )}
@@ -1479,7 +1519,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                           <span>📢 承接人已回報任務完工！</span>
                         </div>
                         <p className="text-[10px] text-slate-600 leading-relaxed">
-                          系統已鎖定單方面直接刪除以維護雙方權益。請在確認任務成果符合預期後，點擊「確認完成結案」。
+                          請在確認任務成果符合預期後，點擊「確認完成結案」。
                         </p>
                         {autoCompleteTimeLeft && (
                           <div className="p-2 bg-amber-100/80 border border-amber-200/80 rounded-lg text-[10px] text-amber-900 font-bold flex items-center gap-1 shadow-xs">
@@ -1504,10 +1544,10 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                       </button>
                       <button
                         onClick={handleCancelByOwner}
-                        disabled={!!task.acceptorCompleted}
+                        disabled={!!(task.ownerConfirmedContact || task.acceptorCompleted)}
                         className={cn(
                           "py-2.5 rounded-xl text-xs font-bold transition-all transform active:scale-95 flex items-center justify-center gap-1",
-                          task.acceptorCompleted  
+                          (task.ownerConfirmedContact || task.acceptorCompleted) 
                             ? "bg-slate-100 text-slate-400 cursor-not-allowed active:scale-100"
                             : "bg-red-50 hover:bg-red-100 text-red-600"
                         )}
