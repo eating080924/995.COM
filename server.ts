@@ -339,6 +339,9 @@ async function startServer() {
       } else if (type === "rpa_push") {
         title = `${safeSenderName} 📢`; // 標題顯示：推播者名稱 📢
         body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。"; // 內文直接顯示 Python 傳來的推播內容
+      } else if (type === "broadcast") {
+        title = "任務推薦 🎯";
+        body = safeTaskContent || "您有一則新的任務推薦！點擊查看詳情。";
       }
 
       const payload = {
