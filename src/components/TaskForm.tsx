@@ -224,58 +224,26 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           console.warn('Failed to query matching user preferences client-side:', queryErr);
         }
 
-        // If no user set explicit category/region preference, fallback to all other users so all users receive the task recommendation
-        if (matchedUserIds.length === 0) {
+        // Create in-app notifications in Firestore for matched users (which also triggers 1 background Web Push via sendNotification)
+        if (matchedUserIds.length > 0) {
+          const taskContentSummary = `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`;
           try {
-            const allUsersSnap = await getDocs(collection(db, 'users'));
-            allUsersSnap.forEach(doc => {
-              if (doc.id !== user.uid) matchedUserIds.push(doc.id);
-            });
-          } catch (e) {
-            console.warn('Failed to fetch fallback users list for in-app notification:', e);
+            await Promise.allSettled(
+              matchedUserIds.map((recipientUid) =>
+                sendNotification({
+                  userId: recipientUid,
+                  type: 'broadcast',
+                  taskId: taskDocRef.id,
+                  taskNum,
+                  taskContent: taskContentSummary,
+                  senderId: user.uid,
+                  senderName: user.displayName || '平台用戶',
+                })
+              )
+            );
+          } catch (notifErr) {
+            console.warn('Failed to send client-side in-app notifications:', notifErr);
           }
-        }
-
-        // 1. Create in-app notifications in Firestore for all target users so Notification Center displays messages
-        const taskContentSummary = `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`;
-        try {
-          await Promise.allSettled(
-            matchedUserIds.map((recipientUid) =>
-              sendNotification({
-                userId: recipientUid,
-                type: 'broadcast',
-                taskId: taskDocRef.id,
-                taskNum,
-                taskContent: taskContentSummary,
-                senderId: user.uid,
-                senderName: user.displayName || '平台用戶',
-              })
-            )
-          );
-        } catch (notifErr) {
-          console.warn('Failed to send client-side in-app notifications:', notifErr);
-        }
-
-        // 2. Fire and forget: send push notifications to users matching interest subscriptions/preferences in the background
-        try {
-          fetch('/api/send-matching-push', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              userIds: matchedUserIds,
-              category: data.category,
-              region: data.region,
-              taskNum,
-              taskId: taskDocRef.id,
-              taskContent: data.content,
-              senderId: user.uid,
-              senderName: user.displayName || '平台用戶',
-            }),
-          }).catch((err) => console.warn('Failed to send matching push notification:', err));
-        } catch (pushErr) {
-          console.warn('Matching push trigger failed:', pushErr);
         }
       }
       onClose();
