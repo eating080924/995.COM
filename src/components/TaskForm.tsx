@@ -2,6 +2,7 @@ import React from 'react';
 import { useForm } from 'react-hook-form';
 import { collection, addDoc, doc, updateDoc, serverTimestamp, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { sendNotification } from '../lib/notificationService';
 import { useAuth } from '../lib/AuthContext';
 import { handleFirestoreError, OperationType } from '../lib/errorHandler';
 import { X, Loader2, AlertTriangle, Layers, MapPin } from 'lucide-react';
@@ -223,7 +224,39 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           console.warn('Failed to query matching user preferences client-side:', queryErr);
         }
 
-        // Fire and forget: send push notifications to users matching interest subscriptions/preferences in the background
+        // If no user set explicit category/region preference, fallback to all other users so all users receive the task recommendation
+        if (matchedUserIds.length === 0) {
+          try {
+            const allUsersSnap = await getDocs(collection(db, 'users'));
+            allUsersSnap.forEach(doc => {
+              if (doc.id !== user.uid) matchedUserIds.push(doc.id);
+            });
+          } catch (e) {
+            console.warn('Failed to fetch fallback users list for in-app notification:', e);
+          }
+        }
+
+        // 1. Create in-app notifications in Firestore for all target users so Notification Center displays messages
+        const taskContentSummary = `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`;
+        try {
+          await Promise.allSettled(
+            matchedUserIds.map((recipientUid) =>
+              sendNotification({
+                userId: recipientUid,
+                type: 'broadcast',
+                taskId: taskDocRef.id,
+                taskNum,
+                taskContent: taskContentSummary,
+                senderId: user.uid,
+                senderName: user.displayName || '平台用戶',
+              })
+            )
+          );
+        } catch (notifErr) {
+          console.warn('Failed to send client-side in-app notifications:', notifErr);
+        }
+
+        // 2. Fire and forget: send push notifications to users matching interest subscriptions/preferences in the background
         try {
           fetch('/api/send-matching-push', {
             method: 'POST',

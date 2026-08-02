@@ -1412,9 +1412,18 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
             {/* Acceptor Actions */}
             {task.status === 'accepted' && isAcceptor && (
               <div className="flex flex-col gap-2 mt-1">
+                {task.ownerConfirmedContact && (
+                  <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
+                    <span>✔️ 雙方已確認聯繫</span>
+                    <span className="text-[9px] text-indigo-500 font-mono">
+                      {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
+                    </span>
+                  </div>
+                )}
+
                 {!task.acceptorCompleted ? (
                   <>
-                    {!task.ownerConfirmedContact ? (
+                    {!task.ownerConfirmedContact && (
                       <div className="p-3 bg-amber-50 text-amber-800 text-[10px] font-bold rounded-xl border border-amber-200 flex flex-col gap-1.5 leading-relaxed shadow-sm">
                         <div className="flex items-start gap-1.5">
                           <span className="text-sm shrink-0">🔒</span>
@@ -1428,13 +1437,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                             <span className="font-mono text-amber-950 underline font-black">{ownerConfirmTimeLeft}</span>
                           </div>
                         )}
-                      </div>
-                    ) : (
-                      <div className="p-2.5 bg-indigo-50 text-indigo-800 text-[10px] font-bold rounded-xl border border-indigo-100 flex items-center justify-between shadow-sm">
-                        <span>✔️ 雙方已確認聯繫</span>
-                        <span className="text-[9px] text-indigo-500 font-mono">
-                          {task.ownerConfirmedContactAt ? formatDate(task.ownerConfirmedContactAt) : ''}
-                        </span>
                       </div>
                     )}
                     <button
