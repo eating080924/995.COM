@@ -26,14 +26,13 @@ interface FormData {
   contact: string;
 }
 
-
 export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   const { user } = useAuth();
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [checkingActiveTask, setCheckingActiveTask] = React.useState(false);
   const [hasActiveTask, setHasActiveTask] = React.useState<boolean | null>(null);
 
-  // Close form immediately if user is not logged in (e.g., during sign out or page load delays)
+  // Close form immediately if user is not logged in
   React.useEffect(() => {
     if (!user) {
       onClose();
@@ -69,7 +68,6 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
   const formatForInput = (dateValue: any) => {
     if (!dateValue) return '';
     const date = dateValue.toDate ? dateValue.toDate() : new Date(dateValue);
-    // Correctly format to YYYY-MM-DDTHH:mm for datetime-local input
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
@@ -92,7 +90,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
       contact: taskToEdit.contact,
     } : {
       deadlineStart: formatForInput(new Date()),
-      deadlineEnd: formatForInput(new Date(Date.now() + 2 * 60 * 60 * 1000)), // 預設為現在 + 2 小時
+      deadlineEnd: formatForInput(new Date(Date.now() + 2 * 60 * 60 * 1000)),
       category: '跑腿代購',
       region: '台北市',
     }
@@ -100,7 +98,6 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
   const watchedDeadlineStart = watch('deadlineStart');
 
-  // 計算預計結束時間的最小與最大允許時間（現在/開始時間 + 1小時 ~ 現在 + 14天）
   const { minDeadlineEndStr, maxDeadlineEndStr } = React.useMemo(() => {
     const now = new Date();
     const nowPlus1Hr = new Date(now.getTime() + 60 * 60 * 1000);
@@ -205,7 +202,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           updatedAt: serverTimestamp()
         });
 
-        // Query users matching preferences client-side (fully authenticated)
+        // 搜尋符合分類與地區偏好的目標使用者
         let matchedUserIds: string[] = [];
         try {
           const qCat = query(collection(db, 'users'), where('preferredCategories', 'array-contains', data.category));
@@ -224,7 +221,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           console.warn('Failed to query matching user preferences client-side:', queryErr);
         }
 
-        // If no user set explicit category/region preference, fallback to all other users so all users receive the task recommendation
+        // 若無設定特定偏好的使用者，備用方案：通知其他所有使用者
         if (matchedUserIds.length === 0) {
           try {
             const allUsersSnap = await getDocs(collection(db, 'users'));
@@ -236,14 +233,14 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           }
         }
 
-        // 1. Create in-app notifications in Firestore for all target users so Notification Center displays messages
+        // 1. 發送站內「任務推薦」通知 (確保將 type 指定為 'recommendation' 或 'task_recommendation')
         const taskContentSummary = `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`;
         try {
           await Promise.allSettled(
             matchedUserIds.map((recipientUid) =>
               sendNotification({
                 userId: recipientUid,
-                type: 'broadcast',
+                type: 'recommendation', // 這裡調整為任務推薦類型，避免觸發廣播或狀態更新類型
                 taskId: taskDocRef.id,
                 taskNum,
                 taskContent: taskContentSummary,
@@ -256,7 +253,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           console.warn('Failed to send client-side in-app notifications:', notifErr);
         }
 
-        // 2. Fire and forget: send push notifications to users matching interest subscriptions/preferences in the background
+        // 2. 發送背景 Push 推播 (僅觸發 /api/send-matching-push 進行新任務推薦推播)
         try {
           fetch('/api/send-matching-push', {
             method: 'POST',
@@ -272,6 +269,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
               taskContent: data.content,
               senderId: user.uid,
               senderName: user.displayName || '平台用戶',
+              notificationType: 'recommendation' // 明確指定推播類型為推薦
             }),
           }).catch((err) => console.warn('Failed to send matching push notification:', err));
         } catch (pushErr) {
@@ -413,7 +411,6 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
                     if (!taskToEdit) {
                       const selected = new Date(value);
                       const current = new Date();
-                      // Allow a 1-minute buffer for latency
                       if (selected < new Date(current.getTime() - 60000)) {
                         return '任務開始時間不得小於當下時間';
                       }
