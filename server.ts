@@ -386,7 +386,7 @@ async function startServer() {
       const matchedUserIds = new Set<string>(userIdsArray);
 
       // Create in-app notifications in Firestore for all matched users so Notification Center has messages
-      const notifPromises = Array.from(matchedUserIds).map(async (uid) => {
+      {/*const notifPromises = Array.from(matchedUserIds).map(async (uid) => {
         try {
           const notifUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/notifications?key=${FIREBASE_API_KEY}`;
           const notifBody = {
@@ -410,7 +410,7 @@ async function startServer() {
         } catch (nErr) {
           console.warn(`Failed to insert in-app notification for user ${uid}:`, nErr);
         }
-      });
+      });*/}
       await Promise.allSettled(notifPromises);
 
       const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
