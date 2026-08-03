@@ -50,7 +50,7 @@ export function CommunityLinks() {
             </div>
           </a>
 
-          <a 
+          {/*<a 
             href="https://lin.ee/7Ppqxwh" 
             target="_blank" 
             rel="noopener noreferrer"
@@ -69,7 +69,7 @@ export function CommunityLinks() {
                 任何建議、系統問題反饋或商務合作，歡迎私訊聯絡我們
               </p>
             </div>
-          </a>
+          </a>*/}
         </div>
       </div>
 
