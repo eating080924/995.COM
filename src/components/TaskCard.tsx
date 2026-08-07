@@ -11,6 +11,7 @@ import { TaskForm } from './TaskForm';
 import { ConfirmDialog } from './ConfirmDialog';
 import { sendNotification } from '../lib/notificationService';
 import { submitRating } from '../lib/ratingAndAchievements';
+import { recordSuccessfulTaskCompletionForCredit, checkAndRepairUserCredit } from '../lib/creditRepair';
 
 
 export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
@@ -69,6 +70,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       });
 
       if (task.acceptorId) {
+        await recordSuccessfulTaskCompletionForCredit(task.acceptorId);
         await sendNotification({
           userId: task.acceptorId,
           type: 'task_accepted',
@@ -154,6 +156,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           noContactStrikes: newViolations,
           penaltyStatus,
           bannedUntil: bannedUntil ? bannedUntil : deleteField(),
+          lastViolationAt: serverTimestamp(),
+          successfulTasksSinceViolation: 0,
           updatedAt: serverTimestamp()
         });
 
@@ -301,25 +305,32 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
       const now = Date.now();
 
       // (A) 承接者 24 小時未回報聯繫自動重開
-      const acceptedTime = parseTaskDate(task.acceptedAt) || parseTaskDate(task.updatedAt) || parseTaskDate(task.createdAt) || new Date();
+      const rawAcceptedTime = parseTaskDate(task.acceptedAt);
+      const acceptedTime = rawAcceptedTime || new Date();
       
       const oneHourMs = 60 * 60 * 1000;
       const twentyFourHoursMs = 24 * 60 * 60 * 1000;
       const elapsedAccept = now - acceptedTime.getTime();
 
       if (!task.acceptorContacted) {
-        if (elapsedAccept >= oneHourMs) {
-          setCanReportNoContact(true);
-          setTimeLeftToReport('');
-        } else {
-          setCanReportNoContact(false);
-          const mins = Math.ceil((oneHourMs - elapsedAccept) / (60 * 1000));
-          setTimeLeftToReport(`需等待承接滿 1 個小時（剩餘 ${mins} 分鐘）`);
-        }
+        if (rawAcceptedTime) {
+          if (elapsedAccept >= oneHourMs) {
+            setCanReportNoContact(true);
+            setTimeLeftToReport('');
+          } else {
+            setCanReportNoContact(false);
+            const mins = Math.ceil((oneHourMs - elapsedAccept) / (60 * 1000));
+            setTimeLeftToReport(`需等待承接滿 1 個小時（剩餘 ${mins} 分鐘）`);
+          }
 
-        if (elapsedAccept >= twentyFourHoursMs) {
-          triggerAutoNoContactReset();
-          return;
+          if (elapsedAccept >= twentyFourHoursMs) {
+            triggerAutoNoContactReset();
+            return;
+          }
+        } else {
+          // 若 acceptedAt 尚未同步，視為剛承接，不觸發 24 小時無聯繫重開
+          setCanReportNoContact(false);
+          setTimeLeftToReport('需等待承接滿 1 個小時');
         }
       }
 
@@ -367,7 +378,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           }
         } else {
           // 相容舊資料未設定 deadlineEnd：完工後 48 小時自動結案
-          const completedTime = parseTaskDate(task.acceptorCompletedAt) || parseTaskDate(task.updatedAt) || new Date();
+          const completedTime = parseTaskDate(task.acceptorCompletedAt) || new Date();
           
           const fortyEightHoursMs = 48 * 60 * 60 * 1000;
           const elapsedComplete = now - completedTime.getTime();
@@ -439,8 +450,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     return () => clearInterval(interval);
   }, [task.status, task.acceptedAt, task.acceptorContacted, task.acceptorContactedAt, task.ownerConfirmedContact, task.ownerConfirmedContactAt, task.acceptorCompleted, task.acceptorCompletedAt, task.acceptorId]);
 
-  // Acceptor profile state for displaying active title
-  const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string } | null>(null);
+  // Acceptor profile state for displaying active title and credit rating
+  const [acceptorProfile, setAcceptorProfile] = useState<{ activeTitle?: string; noContactViolationsCount?: number } | null>(null);
 
   useEffect(() => {
     if (!task.acceptorId) {
@@ -455,6 +466,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           const uData = uSnap.data();
           setAcceptorProfile({
             activeTitle: uData.activeTitle || '',
+            noContactViolationsCount: uData.noContactViolationsCount || uData.noContactStrikes || 0,
           });
         }
       } catch (err) {
@@ -480,7 +492,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           where('status', '==', 'completed')
         );
         const completedSnap = await getDocs(completedQ);
-        const expertsMap = new Map<string, { uid: string; displayName: string; count: number; rating: number; ratingCount: number; activeTitle: string }>();
+        const expertsMap = new Map<string, { uid: string; displayName: string; count: number; rating: number; ratingCount: number; activeTitle: string; noContactViolationsCount: number }>();
 
         completedSnap.forEach((docSnap) => {
           const t = docSnap.data();
@@ -495,7 +507,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 count: 1,
                 rating: 5.0,
                 ratingCount: 1,
-                activeTitle: ''
+                activeTitle: '',
+                noContactViolationsCount: 0
               });
             }
           }
@@ -515,6 +528,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               existing.rating = u.averageRating || 5.0;
               existing.ratingCount = u.ratingCount || 0;
               existing.activeTitle = u.activeTitle || '';
+              existing.noContactViolationsCount = u.noContactViolationsCount || u.noContactStrikes || 0;
             } else {
               expertsMap.set(docSnap.id, {
                 uid: docSnap.id,
@@ -522,7 +536,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 count: 0,
                 rating: u.averageRating || 5.0,
                 ratingCount: u.ratingCount || 0,
-                activeTitle: u.activeTitle || ''
+                activeTitle: u.activeTitle || '',
+                noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0
               });
             }
           }
@@ -531,15 +546,14 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
         // 3. Resolve additional profile details
         const finalExperts = Array.from(expertsMap.values());
         for (let exp of finalExperts) {
-          if (!exp.activeTitle) {
-            const uRef = doc(db, 'users', exp.uid);
-            const uSnap = await getDoc(uRef);
-            if (uSnap.exists()) {
-              const uData = uSnap.data();
-              exp.activeTitle = uData.activeTitle || '';
-              exp.rating = uData.averageRating || 5.0;
-              exp.ratingCount = uData.ratingCount || 0;
-            }
+          const uRef = doc(db, 'users', exp.uid);
+          const uSnap = await getDoc(uRef);
+          if (uSnap.exists()) {
+            const uData = uSnap.data();
+            exp.activeTitle = uData.activeTitle || exp.activeTitle || '';
+            exp.rating = uData.averageRating || exp.rating || 5.0;
+            exp.ratingCount = uData.ratingCount || exp.ratingCount || 0;
+            exp.noContactViolationsCount = uData.noContactViolationsCount || uData.noContactStrikes || 0;
           }
         }
 
@@ -715,9 +729,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     if (!user || user.uid !== task.acceptorId) return;
     
     // Calculate hold duration
-    const acceptedAt = task.acceptedAt?.toDate 
-      ? task.acceptedAt.toDate() 
-      : (task.acceptedAt ? new Date(task.acceptedAt) : (task.updatedAt?.toDate ? task.updatedAt.toDate() : new Date()));
+    const acceptedAt = parseTaskDate(task.acceptedAt) || new Date();
     const elapsedMs = Date.now() - acceptedAt.getTime();
     const isWithin10Mins = elapsedMs <= 10 * 60 * 1000; // 10 minutes
 
@@ -795,6 +807,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 penaltyStatus,
                 bannedUntil: bannedUntil ? bannedUntil : deleteField(),
                 lastCancelledAt: serverTimestamp(),
+                lastViolationAt: serverTimestamp(),
+                successfulTasksSinceViolation: 0,
                 updatedAt: serverTimestamp()
               });
 
@@ -856,6 +870,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           });
 
           if (task.acceptorId) {
+            await recordSuccessfulTaskCompletionForCredit(task.acceptorId);
             await sendNotification({
               userId: task.acceptorId,
               type: 'task_completed',
@@ -1123,6 +1138,8 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                 noContactStrikes: newViolations, // keep backward compatibility
                 penaltyStatus,
                 bannedUntil: bannedUntil ? bannedUntil : deleteField(),
+                lastViolationAt: serverTimestamp(),
+                successfulTasksSinceViolation: 0,
                 updatedAt: serverTimestamp()
               });
 
@@ -1277,6 +1294,24 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                   ) : (
                     <span className="px-1 py-0.2 bg-slate-100 text-slate-500 font-bold text-[8px] border border-slate-200 rounded shrink-0">
                       無稱號
+                    </span>
+                  )}
+
+                  {(!acceptorProfile?.noContactViolationsCount || acceptorProfile.noContactViolationsCount === 0) ? (
+                    <span className="px-1 py-0.2 bg-emerald-50 text-emerald-700 font-extrabold text-[8px] border border-emerald-200/60 rounded shrink-0 flex items-center gap-0.5">
+                      🟢 卓越信譽
+                    </span>
+                  ) : acceptorProfile.noContactViolationsCount <= 2 ? (
+                    <span className="px-1 py-0.2 bg-amber-50 text-amber-700 font-extrabold text-[8px] border border-amber-200/60 rounded shrink-0 flex items-center gap-0.5">
+                      🟡 信用提醒
+                    </span>
+                  ) : acceptorProfile.noContactViolationsCount <= 4 ? (
+                    <span className="px-1 py-0.2 bg-orange-50 text-orange-700 font-extrabold text-[8px] border border-orange-200/60 rounded shrink-0 flex items-center gap-0.5">
+                      🟠 限制接單中
+                    </span>
+                  ) : (
+                    <span className="px-1 py-0.2 bg-red-50 text-red-700 font-extrabold text-[8px] border border-red-200/60 rounded shrink-0 flex items-center gap-0.5">
+                      🔴 帳號封鎖
                     </span>
                   )}
                 </div>
@@ -1645,6 +1680,23 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                                 {exp.activeTitle && (
                                   <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded">
                                     🏆 {exp.activeTitle}
+                                  </span>
+                                )}
+                                {(!exp.noContactViolationsCount || exp.noContactViolationsCount === 0) ? (
+                                  <span className="px-1 py-0.2 bg-emerald-50 text-emerald-700 font-extrabold text-[8px] border border-emerald-200/60 rounded shrink-0 flex items-center gap-0.5">
+                                    🟢 卓越信譽
+                                  </span>
+                                ) : exp.noContactViolationsCount <= 2 ? (
+                                  <span className="px-1 py-0.2 bg-amber-50 text-amber-700 font-extrabold text-[8px] border border-amber-200/60 rounded shrink-0 flex items-center gap-0.5">
+                                    🟡 信用提醒
+                                  </span>
+                                ) : exp.noContactViolationsCount <= 4 ? (
+                                  <span className="px-1 py-0.2 bg-orange-50 text-orange-700 font-extrabold text-[8px] border border-orange-200/60 rounded shrink-0 flex items-center gap-0.5">
+                                    🟠 限制接單中
+                                  </span>
+                                ) : (
+                                  <span className="px-1 py-0.2 bg-red-50 text-red-700 font-extrabold text-[8px] border border-red-200/60 rounded shrink-0 flex items-center gap-0.5">
+                                    🔴 帳號封鎖
                                   </span>
                                 )}
                               </div>

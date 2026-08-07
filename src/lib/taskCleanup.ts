@@ -1,12 +1,14 @@
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, deleteField, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, deleteField, serverTimestamp, Timestamp, getDoc, addDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { handleFirestoreError, OperationType } from './errorHandler';
 import { sendNotification } from './notificationService';
 
 /**
  * Performs cleanup of tasks for the current user based on the following rules:
- * 1. Auto-delete "Open" tasks after 3 days.
- * 2. Auto-complete "Accepted" tasks when they reach their expected end time.
+ * 1. Auto-expire "Open" tasks after deadlineEnd or exceeded max lifespan (14 days / 3 days legacy).
+ * 2. Auto-reset "Accepted" tasks if 24 hours passed without acceptor reporting contact (+ penalty log).
+ * 3. Auto-reset "Accepted" tasks if 1 hour passed without owner confirming contact.
+ * 4. Auto-complete or auto-reset "Accepted" tasks when they reach their expected end time (deadlineEnd).
  */
 export async function performTaskCleanup(userId: string | undefined) {
   if (!userId) return;
@@ -15,8 +17,7 @@ export async function performTaskCleanup(userId: string | undefined) {
     const now = new Date();
     const tasksRef = collection(db, 'tasks');
 
-    // 1. Cleanup "Open" tasks whose deadlineEnd has passed or exceeded max lifespan (14 days)
-    // Use an extra hour on the client to avoid clock skew issues with Firestore rules
+    // 1. Cleanup "Open" tasks whose deadlineEnd has passed or exceeded max lifespan
     const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000 - 60 * 60 * 1000);
 
@@ -44,19 +45,16 @@ export async function performTaskCleanup(userId: string | undefined) {
 
           if (data.deadlineEnd) {
             const deadlineEnd = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
-            // 條件 A：如果設有預計結束時間，且該時間已到期，則判定超時關閉
             if (deadlineEnd < currentDate) {
               isExpired = true;
             }
           } else if (data.createdAt) {
-            // 條件 B：相容未設定 deadlineEnd 的舊版任務，發佈超過 3 天即自動關閉
             const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
             if (createdAt < threeDaysAgo) {
               isExpired = true;
             }
           }
 
-          // 條件 C：系統防護底線，無論有無 deadlineEnd，發佈時間若超過 14 天上限強制關閉
           if (data.createdAt) {
             const createdAt = data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
             if (createdAt < fourteenDaysAgo) {
@@ -85,30 +83,179 @@ export async function performTaskCleanup(userId: string | undefined) {
       console.log(`Auto-cleaned ${deletedCount} expired/overdue open tasks by setting status to 'timeout'.`);
     }
 
-    // 2. Auto-complete "Accepted" tasks that reached deadlineEnd or handle contact timeouts
-    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
-    const acceptedTasksQuery = query(
+    // 2. Cleanup "Accepted" tasks for both requester and acceptor roles
+    const acceptedAsRequesterQuery = query(
       tasksRef,
       where('status', '==', 'accepted'),
       where('requesterId', '==', userId)
     );
 
-    let acceptedTasksSnapshot;
+    const acceptedAsAcceptorQuery = query(
+      tasksRef,
+      where('status', '==', 'accepted'),
+      where('acceptorId', '==', userId)
+    );
+
+    let acceptedDocsMap = new Map<string, any>();
     try {
-      acceptedTasksSnapshot = await getDocs(acceptedTasksQuery);
+      const [reqSnap, accSnap] = await Promise.all([
+        getDocs(acceptedAsRequesterQuery),
+        getDocs(acceptedAsAcceptorQuery)
+      ]);
+      reqSnap.docs.forEach(doc => acceptedDocsMap.set(doc.id, doc));
+      accSnap.docs.forEach(doc => acceptedDocsMap.set(doc.id, doc));
     } catch (e) {
       console.warn('Failed to query accepted tasks for cleanup:', e);
       return;
     }
 
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+    const twentyFourHoursMs = 24 * 60 * 60 * 1000;
+    const oneHourMs = 60 * 60 * 1000;
+
     const completeResults = await Promise.all(
-      acceptedTasksSnapshot.docs
+      Array.from(acceptedDocsMap.values())
         .map(async (taskDoc) => {
           const data = taskDoc.data();
           const currentDate = new Date();
 
-          // Rule 3A: Check deadlineEnd for accepted tasks
+          // Rule A: Check 24-hour no contact timeout if acceptor hasn't reported contact
+          if (!data.acceptorContacted) {
+            const rawAcceptedAt = data.acceptedAt?.toDate 
+              ? data.acceptedAt.toDate() 
+              : (data.acceptedAt ? new Date(data.acceptedAt) : null);
+
+            // 必須明確擁有 acceptedAt 承接時間紀錄才計算 24 小時未聯繫。若缺少 acceptedAt（例如剛承接未同步），絕對不能退回 createdAt/updatedAt 判定！
+            if (rawAcceptedAt && !isNaN(rawAcceptedAt.getTime()) && currentDate.getTime() - rawAcceptedAt.getTime() >= twentyFourHoursMs) {
+              try {
+                const originalAcceptorId = data.acceptorId;
+                await updateDoc(taskDoc.ref, {
+                  status: 'open',
+                  acceptorId: deleteField(),
+                  acceptorName: deleteField(),
+                  acceptedAt: deleteField(),
+                  acceptorContacted: deleteField(),
+                  acceptorContactedAt: deleteField(),
+                  ownerConfirmedContact: deleteField(),
+                  ownerConfirmedContactAt: deleteField(),
+                  acceptorCompleted: deleteField(),
+                  acceptorCompletedAt: deleteField(),
+                  updatedAt: serverTimestamp()
+                });
+
+                if (originalAcceptorId) {
+                  await sendNotification({
+                    userId: originalAcceptorId,
+                    type: 'task_unaccepted',
+                    taskId: taskDoc.id,
+                    taskNum: data.taskNum || '',
+                    taskContent: `⚡ 系統防卡死自動重開：因您承接任務後逾 24 小時未回報「已主動聯繫」，系統已自動取消您的承接資格並重開任務。`,
+                    senderId: 'system',
+                    senderName: '系統管理員'
+                  });
+
+                  // Log penalty for 24h no contact
+                  const accUserRef = doc(db, 'users', originalAcceptorId);
+                  const accUserSnap = await getDoc(accUserRef);
+                  if (accUserSnap.exists()) {
+                    const accData = accUserSnap.data();
+                    const currentViolations = accData.noContactViolationsCount || accData.noContactStrikes || 0;
+                    const newViolations = currentViolations + 1;
+
+                    let penaltyStatus: 'none' | 'suspended' | 'banned' = 'none';
+                    let bannedUntil: Date | null = null;
+                    let penaltyApplied = '';
+
+                    if (newViolations === 1) {
+                      penaltyStatus = 'none';
+                      penaltyApplied = '平台警告（第 1 次無故未聯繫違規）';
+                    } else if (newViolations === 2) {
+                      penaltyStatus = 'none';
+                      penaltyApplied = '平台警告與信用提醒（第 2 次無故未聯繫違規）';
+                    } else if (newViolations === 3) {
+                      penaltyStatus = 'suspended';
+                      bannedUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+                      penaltyApplied = '限制承接任務 3 天（第 3 次無故未聯繫違規）';
+                    } else if (newViolations === 4) {
+                      penaltyStatus = 'suspended';
+                      bannedUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+                      penaltyApplied = '限制承接任務 7 天（第 4 次無故未聯繫違規）';
+                    } else {
+                      penaltyStatus = 'banned';
+                      penaltyApplied = '帳號永久封鎖（第 5 次無故未聯繫違規）';
+                    }
+
+                    await updateDoc(accUserRef, {
+                      noContactViolationsCount: newViolations,
+                      noContactStrikes: newViolations,
+                      penaltyStatus,
+                      bannedUntil: bannedUntil ? bannedUntil : deleteField(),
+                      lastViolationAt: serverTimestamp(),
+                      successfulTasksSinceViolation: 0,
+                      updatedAt: serverTimestamp()
+                    });
+
+                    await addDoc(collection(db, 'violation_logs'), {
+                      userId: originalAcceptorId,
+                      userName: data.acceptorName || '在線超人',
+                      taskId: taskDoc.id,
+                      taskNum: data.taskNum || '',
+                      reporterId: 'system',
+                      reason: '24小時超時未聯繫 (系統自動觸發)',
+                      penaltyApplied: penaltyApplied,
+                      createdAt: serverTimestamp()
+                    });
+                  }
+                }
+                console.log(`Successfully auto-reset 24h uncontacted task ${taskDoc.id} to 'open'`);
+                return { success: true };
+              } catch (e) {
+                console.warn(`Failed to auto-reset 24h uncontacted task ${taskDoc.id}:`, e);
+                return { success: false };
+              }
+            }
+          }
+
+          // Rule B: Owner 1-hour contact confirmation timeout reset to 'open'
+          if (data.acceptorContacted && !data.ownerConfirmedContact && data.acceptorContactedAt) {
+            const contactedAt = data.acceptorContactedAt.toDate ? data.acceptorContactedAt.toDate() : new Date(data.acceptorContactedAt);
+            if (currentDate.getTime() - contactedAt.getTime() > oneHourMs) {
+              try {
+                await updateDoc(taskDoc.ref, {
+                  status: 'open',
+                  acceptorId: deleteField(),
+                  acceptorName: deleteField(),
+                  acceptedAt: deleteField(),
+                  acceptorContacted: deleteField(),
+                  acceptorContactedAt: deleteField(),
+                  ownerConfirmedContact: deleteField(),
+                  ownerConfirmedContactAt: deleteField(),
+                  acceptorCompleted: deleteField(),
+                  acceptorCompletedAt: deleteField(),
+                  updatedAt: serverTimestamp()
+                });
+
+                if (data.acceptorId) {
+                  await sendNotification({
+                    userId: data.acceptorId,
+                    type: 'task_unaccepted',
+                    taskId: taskDoc.id,
+                    taskNum: data.taskNum || '',
+                    taskContent: `⚡ 系統自動調整：因委託人逾 1 小時未按下「確認聯繫」，任務已自動重開為開放中，釋放您的承接資格。`,
+                    senderId: 'system',
+                    senderName: '系統管理員'
+                  });
+                }
+                console.log(`Auto-reset task ${taskDoc.id} to 'open' because owner did not confirm contact within 1 hour.`);
+                return { success: true };
+              } catch (e) {
+                console.warn(`Failed to auto-reset unconfirmed contact task ${taskDoc.id}:`, e);
+                return { success: false };
+              }
+            }
+          }
+
+          // Rule C: Check deadlineEnd for accepted tasks
           if (data.deadlineEnd) {
             const deadlineDate = data.deadlineEnd.toDate ? data.deadlineEnd.toDate() : new Date(data.deadlineEnd);
             if (deadlineDate < fiveMinutesAgo) {
@@ -186,43 +333,16 @@ export async function performTaskCleanup(userId: string | undefined) {
             }
           }
 
-          // Rule 2B: Owner 1-hour contact confirmation timeout reset to 'open'
-          if (data.acceptorContacted && !data.ownerConfirmedContact && data.acceptorContactedAt) {
-            const contactedAt = data.acceptorContactedAt.toDate ? data.acceptorContactedAt.toDate() : new Date(data.acceptorContactedAt);
-            const oneHourMs = 60 * 60 * 1000;
-            if (currentDate.getTime() - contactedAt.getTime() > oneHourMs) {
-              try {
-                await updateDoc(taskDoc.ref, {
-                  status: 'open',
-                  acceptorId: deleteField(),
-                  acceptorName: deleteField(),
-                  acceptedAt: deleteField(),
-                  acceptorContacted: deleteField(),
-                  acceptorContactedAt: deleteField(),
-                  ownerConfirmedContact: deleteField(),
-                  ownerConfirmedContactAt: deleteField(),
-                  acceptorCompleted: deleteField(),
-                  acceptorCompletedAt: deleteField(),
-                  updatedAt: serverTimestamp()
-                });
-                console.log(`Auto-reset task ${taskDoc.id} to 'open' because owner did not confirm contact within 1 hour.`);
-                return { success: true };
-              } catch (e) {
-                console.warn(`Failed to auto-reset unconfirmed contact task ${taskDoc.id}:`, e);
-                return { success: false };
-              }
-            }
-          }
-
           return { success: false };
         })
     );
 
     const completedCount = completeResults.filter(r => r.success).length;
     if (completedCount > 0) {
-      console.log(`Auto-completed ${completedCount} past-due tasks from the system.`);
+      console.log(`Auto-cleaned/reset ${completedCount} tasks during cleanup.`);
     }
   } catch (error) {
     console.error('Error performing global task cleanup loop:', error);
   }
 }
+

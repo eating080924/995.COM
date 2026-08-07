@@ -9,6 +9,7 @@ import { db } from '../lib/firebase';
 import { doc, getDoc, updateDoc, collection, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { TASK_CATEGORIES, TAIWAN_REGIONS, TITLE_ACHIEVEMENTS } from '../config/achievements';
 import { updateUserStatsAndAchievements } from '../lib/ratingAndAchievements';
+import { checkAndRepairUserCredit } from '../lib/creditRepair';
 
 export function AccountPrivacyPanel() {
   const { user, logout } = useAuth();
@@ -32,6 +33,7 @@ export function AccountPrivacyPanel() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedRegions, setSelectedRegions] = useState<string[]>([]);
   const [activeTitle, setActiveTitle] = useState<string>('');
+  const [coolingTimeLeft, setCoolingTimeLeft] = useState<string>('');
 
   const [enableCenterPopup, setEnableCenterPopup] = useState<boolean>(() => {
     if (typeof window !== 'undefined') {
@@ -65,6 +67,10 @@ export function AccountPrivacyPanel() {
       const fetchProfileAndReviews = async () => {
         try {
           setLoadingProfile(true);
+
+          // 自動檢測並進行信用修復 (處罰期滿退回 2 次 / 30 天滾動冷卻扣減)
+          await checkAndRepairUserCredit(user.uid);
+
           const userRef = doc(db, 'users', user.uid);
           let userDoc = await getDoc(userRef);
           
@@ -110,6 +116,44 @@ export function AccountPrivacyPanel() {
       fetchProfileAndReviews();
     }
   }, [user]);
+
+  // 滾動式 30 天時間冷卻倒數計時器
+  useEffect(() => {
+    if (!profile || !profile.noContactViolationsCount || profile.noContactViolationsCount <= 0 || !user) {
+      setCoolingTimeLeft('');
+      return;
+    }
+
+    let lastVal = profile.lastViolationAt;
+    let lastDate = lastVal?.toDate 
+      ? lastVal.toDate() 
+      : (lastVal ? new Date(lastVal) : (profile.createdAt?.toDate ? profile.createdAt.toDate() : new Date()));
+
+    const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+    const targetTime = lastDate.getTime() + thirtyDaysMs;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const diff = targetTime - now;
+
+      if (diff <= 0) {
+        setCoolingTimeLeft('冷卻期滿！系統正在為您抵銷違規...');
+        checkAndRepairUserCredit(user.uid).then((repaired) => {
+          if (repaired) setProfile(repaired);
+        });
+      } else {
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+        setCoolingTimeLeft(`${days} 天 ${hours} 小時 ${minutes} 分 ${seconds} 秒`);
+      }
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [profile, user]);
 
   if (!user) return null;
 
@@ -286,7 +330,7 @@ export function AccountPrivacyPanel() {
         <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-wrap gap-2">
           <div className="flex items-center gap-2.5">
             <ShieldAlert size={20} className="text-red-500" />
-            <h3 className="font-black text-slate-800 text-sm">🛡️ 超人接單信用與違規紀錄</h3>
+            <h3 className="font-black text-slate-800 text-sm">超人接單信用與違規紀錄</h3>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
@@ -384,6 +428,83 @@ export function AccountPrivacyPanel() {
           </div>
         </div>
 
+        {/* 🌱 信用修復與抵銷雙軌機制 */}
+        <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 md:p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2 border-b border-emerald-100/80 pb-2.5">
+            <h4 className="text-xs font-black text-emerald-900 flex items-center gap-1.5">
+              <Sparkles size={16} className="text-emerald-600" />
+              <span>雙軌信用修復機制 (Credit Recovery System)</span>
+            </h4>
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full">
+              表現換信用 + 時間換信用
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            {/* 機制 1: 優良完工抵銷 */}
+            <div className="bg-white p-3.5 rounded-xl border border-emerald-100 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  🏆 1. 優良完工抵銷 (以表現換信用)
+                </span>
+                <span className="text-[10px] font-mono font-extrabold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                  {profile?.successfulTasksSinceViolation || 0} / 3 次完工
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                超人每成功順利完工 3 次任務，系統自動抵銷 1 次違規紀錄 (Math.max(0, current - 1))。
+              </p>
+              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                <div 
+                  className="bg-emerald-500 h-2 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(100, (((profile?.successfulTasksSinceViolation || 0) / 3) * 100))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 機制 2: 滾動式時間冷卻 */}
+            <div className="bg-white p-3.5 rounded-xl border border-emerald-100 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                  ⏳ 2. 滾動式時間冷卻 (以時間換信用)
+                </span>
+                {profile?.noContactViolationsCount && profile.noContactViolationsCount > 0 ? (
+                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60 animate-pulse">
+                    冷卻倒數中
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                    信用極佳無需冷卻
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                距離上次違規超過 30 天且期間無任何新違規，系統自動抵銷 1 次違規紀錄。
+              </p>
+              {profile?.noContactViolationsCount && profile.noContactViolationsCount > 0 ? (
+                <div className="p-2 bg-amber-50/60 border border-amber-100 rounded-lg text-center">
+                  <span className="text-[10px] font-black text-amber-800 font-mono block">
+                    ⌛ 距離下次自動抵銷剩餘：{coolingTimeLeft || '計算中...'}
+                  </span>
+                </div>
+              ) : (
+                <div className="p-2 bg-emerald-50/60 border border-emerald-100 rounded-lg text-center">
+                  <span className="text-[10px] font-black text-emerald-800 block">
+                    ✨ 當前無任何違規，無需進行時間冷卻！
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100 text-[10px] text-slate-600 leading-relaxed font-medium flex items-start gap-1.5">
+            <Info size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+            <span>
+              <b>處罰期滿保護機制：</b>當第 3 次（停權 3 天）或第 4 次（停權 7 天）處罰期限結束後，系統會自動解封接單權限，並將違規計次調整退回到 <b>2 次（提醒階段）</b>。
+            </span>
+          </div>
+        </div>
+
         {/* Violation History Logs */}
         <div className="space-y-3">
           <h4 className="text-xs font-black text-slate-700 flex items-center gap-1">
@@ -428,7 +549,7 @@ export function AccountPrivacyPanel() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-md p-6 md:p-8 space-y-6">
         <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
           <Award size={20} className="text-red-500" />
-          <h3 className="font-black text-slate-800 text-sm">🏆 超人稱號成就系統</h3>
+          <h3 className="font-black text-slate-800 text-sm">超人稱號成就系統</h3>
         </div>
 
         {/* Selected active title selector */}
@@ -500,7 +621,7 @@ export function AccountPrivacyPanel() {
       <div className="bg-white rounded-3xl border border-slate-200 shadow-md p-6 md:p-8 space-y-6">
         <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
           <Settings size={20} className="text-red-500" />
-          <h3 className="font-black text-slate-800 text-sm">🔔 興趣訂閱與任務偏好</h3>
+          <h3 className="font-black text-slate-800 text-sm">興趣訂閱與任務偏好</h3>
         </div>
 
         <p className="text-xs text-slate-500 leading-relaxed">
