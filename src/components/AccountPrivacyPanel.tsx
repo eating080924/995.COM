@@ -500,7 +500,7 @@ export function AccountPrivacyPanel() {
           <div className="p-2.5 bg-white/80 rounded-xl border border-emerald-100 text-[10px] text-slate-600 leading-relaxed font-medium flex items-start gap-1.5">
             <Info size={14} className="text-emerald-600 shrink-0 mt-0.5" />
             <span>
-              <b>處罰期滿保護機制：</b>當第 3 次（停權 3 天）或第 4 次（停權 7 天）處罰期限結束後，系統會自動解封接單權限，並將違規計次調整退回到 <b>2 次（提醒階段）</b>。
+              <b>處罰期滿恢復權限：</b>當第 3 次（停權 3 天）或第 4 次（停權 7 天）處罰期限結束後，系統會自動解封接單權限。累積的違規次數將會保留，並透過<b>雙軌信用修復機制（完工抵銷 / 時間冷卻）</b>逐步修復扣減。
             </span>
           </div>
         </div>

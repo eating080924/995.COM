@@ -30,18 +30,13 @@ export async function checkAndRepairUserCredit(userId: string): Promise<UserProf
       lastViolationDate = lva.toDate ? lva.toDate() : new Date(lva);
     }
 
-    // 1. 處罰期滿保護：停權期滿自動解禁並將違規計次降回 2 次（避免過期立馬再受重罰）
+    // 1. 處罰期滿恢復權限：停權期滿自動解除停權（違規次數保留，由雙軌機制修復）
     if (currentPenaltyStatus === 'suspended' && currentBannedUntil) {
       const bannedUntilDate = currentBannedUntil.toDate ? currentBannedUntil.toDate() : new Date(currentBannedUntil);
       if (now >= bannedUntilDate) {
         currentPenaltyStatus = 'none';
-        currentViolations = Math.min(currentViolations, 2); // 調整退回至 2 次
         updates.penaltyStatus = 'none';
-        updates.noContactViolationsCount = currentViolations;
-        updates.noContactStrikes = currentViolations;
         updates.bannedUntil = deleteField();
-        updates.lastViolationAt = serverTimestamp();
-        lastViolationDate = now;
         updateNeeded = true;
       }
     }
