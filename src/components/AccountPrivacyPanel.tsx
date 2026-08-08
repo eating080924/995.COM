@@ -452,7 +452,7 @@ export function AccountPrivacyPanel() {
                 </span>
               </div>
               <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                超人每成功順利完工 3 次任務，系統自動抵銷 1 次違規紀錄 (Math.max(0, current - 1))。
+                超人每成功順利完工 3 次任務，系統自動抵銷 1 次違規紀錄。
               </p>
               <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                 <div 
