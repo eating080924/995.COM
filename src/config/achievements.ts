@@ -38,8 +38,8 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   },
   {
     id: 'second_hero',
-    title: '穿披風的社區守護者',
-    description: '披風不是弱點，飛機引擎才是。',
+    title: '把披風當燃料的狂人',
+    description: '你看起來很棒，但引擎不這麼認為。',
     conditionDescription: '成功承接並完成 45 次委託任務',
     checkFn: (stats) => stats.completedAsAcceptor >= 45,
   },
@@ -53,14 +53,14 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   {
     id: 'generous_boss',
     title: '995 My Hero',
-    description: '樂於為超人帶來任務機會。',
+    description: 'No Capes!',
     conditionDescription: '發布並順利完成 3 次委託任務',
     checkFn: (stats) => stats.completedAsRequester >= 3,
   },
   {
     id: 'loudspeaker',
-    title: '黃金大喇叭',
-    description: '善用廣播宣傳，活絡社區氣氛。',
+    title: '撕裂寂靜的咆嘯者',
+    description: '聽見了嗎？你耳膜破裂的聲音。',
     conditionDescription: '發送緊急廣播達 3 次以上',
     checkFn: (stats) => stats.broadcastCount >= 3,
   }
