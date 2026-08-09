@@ -53,7 +53,7 @@ export const TITLE_ACHIEVEMENTS: TitleAchievement[] = [
   {
     id: 'generous_boss',
     title: '995 My Hero',
-    description: 'No Capes!',
+    description: 'Need Capes!',
     conditionDescription: '發布並順利完成 3 次委託任務',
     checkFn: (stats) => stats.completedAsRequester >= 3,
   },
