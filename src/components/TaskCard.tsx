@@ -48,6 +48,79 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [canReportStaleProgress, setCanReportStaleProgress] = useState(false);
   const [staleProgressTimeLeft, setStaleProgressTimeLeft] = useState<string>('');
 
+  // Contact info safety modal state & 7-day cache
+  const [showContactInfo, setShowContactInfo] = useState(false);
+  const [isSafetyModalOpen, setIsSafetyModalOpen] = useState(false);
+  const [safetyCountdown, setSafetyCountdown] = useState(3);
+  const [canConfirmSafety, setCanConfirmSafety] = useState(false);
+
+  // Check if user already has a valid 7-day safety consent in localStorage
+  const checkSafetyConsentValid = () => {
+    // -------------------------------------------------------------
+    // 🧪 測試專用：強制回傳 false，讓 7 天限制暫時失效
+    return false; 
+    // -------------------------------------------------------------
+    try {
+      const agreedUntil = localStorage.getItem('contact_safety_agreed_until');
+      if (agreedUntil) {
+        const timestamp = Number(agreedUntil);
+        if (!isNaN(timestamp) && Date.now() < timestamp) {
+          return true;
+        }
+      }
+    } catch (e) {
+      console.warn('localStorage read error:', e);
+    }
+    return false;
+  };
+
+  const handleViewContactClick = () => {
+    if (checkSafetyConsentValid()) {
+      setShowContactInfo(true);
+    } else {
+      setSafetyCountdown(3);
+      setCanConfirmSafety(false);
+      setIsSafetyModalOpen(true);
+    }
+  };
+
+  // Timer effect for safety modal countdown with proper cleanup
+  useEffect(() => {
+    let timer: any = null;
+    if (isSafetyModalOpen) {
+      setSafetyCountdown(3);
+      setCanConfirmSafety(false);
+      let count = 3;
+
+      timer = setInterval(() => {
+        count -= 1;
+        if (count <= 0) {
+          setSafetyCountdown(0);
+          setCanConfirmSafety(true);
+          if (timer) clearInterval(timer);
+        } else {
+          setSafetyCountdown(count);
+        }
+      }, 1000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isSafetyModalOpen]);
+
+  const handleConfirmSafety = () => {
+    try {
+      // 7-day cache expiration
+      const expireTime = Date.now() + 7 * 24 * 60 * 60 * 1000;
+      localStorage.setItem('contact_safety_agreed_until', expireTime.toString());
+    } catch (e) {
+      console.warn('localStorage write error:', e);
+    }
+    setIsSafetyModalOpen(false);
+    setShowContactInfo(true);
+  };
+
   // ⚡ 防卡死自動超時驗收結案 (到達預計結束時間無回應自動審核)
   const triggerAutoCompletion = async () => {
     if (!user) return;
@@ -1331,10 +1404,27 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           </div>
           
           { (task.status === 'accepted' && (isOwner || isAcceptor)) || (task.status === 'open' && isOwner) ? (
-            <div className="flex items-center text-[11px] text-indigo-600 font-semibold bg-indigo-50 p-2 rounded-lg break-all">
-              <Phone size={12} className="mr-2 flex-shrink-0" />
-              聯絡方式：{task.contact}
-            </div>
+            showContactInfo ? (
+              <div className="flex items-center text-[11px] text-indigo-600 font-semibold bg-indigo-50 p-2 rounded-lg break-all animate-fade-in">
+                <Phone size={12} className="mr-2 flex-shrink-0" />
+                聯絡方式：{task.contact}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between text-[11px] text-indigo-700 font-semibold bg-indigo-50/80 p-2 rounded-lg gap-2">
+                <div className="flex items-center min-w-0">
+                  <Phone size={12} className="mr-2 flex-shrink-0 text-indigo-500" />
+                  <span className="truncate">聯絡方式：••••••••</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleViewContactClick}
+                  className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] rounded-md transition-all shadow-sm shrink-0 active:scale-95 flex items-center gap-1 cursor-pointer"
+                >
+                  <ShieldAlert size={11} />
+                  <span>查看聯絡資訊</span>
+                </button>
+              </div>
+            )
           ) : task.status === 'accepted' && !isOwner && !isAcceptor ? (
             <div className="flex items-center text-[11px] text-slate-400 font-semibold bg-slate-50 p-2 rounded-lg">
               <Phone size={12} className="mr-2 flex-shrink-0" />
@@ -1745,6 +1835,70 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           showCancel={confirmConfig.showCancel}
           confirmText="確認"
         />
+      )}
+
+      {/* 聯絡資訊安全確認彈窗 */}
+      {isSafetyModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-md w-full p-5 md:p-6 shadow-2xl border border-slate-100 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2 text-amber-600 font-extrabold text-sm md:text-base">
+                <ShieldAlert size={20} className="shrink-0" />
+                <span><strong>聯絡前安全提醒</strong></span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSafetyModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <XCircle size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600 leading-relaxed">
+              <p className="font-bold text-slate-800">
+                為確保您的權益，與委託者聯繫前請注意以下事項：
+              </p>
+              <ol className="list-decimal list-inside space-y-2 bg-amber-50/60 p-3 rounded-xl border border-amber-100/80 text-slate-700">
+                <li className="font-medium">
+                  <span className="font-bold text-slate-900"><b>留存憑據：</b></span>
+                  私下聯繫時，請務必使用簡訊或通訊軟體<b>留存文字對話</b>，作為約定細節的依據。
+                </li>
+                <li className="font-medium">
+                  <span className="font-bold text-slate-900"><b>價值共識：</b></span>
+                  非金錢報酬（如以物易物、技能交換）請於出發前<b>明確確認內容</b>，避免認知落差。
+                </li>
+                <li className="font-medium">
+                  <span className="font-bold text-slate-900">安全至上：</span>
+                  若需見面，建議約在<b>公共場所 (如超商、捷運站)</b>。初次見面請提高警覺。
+                </li>
+              </ol>
+              <p className="text-[11px] text-slate-400 font-medium italic pt-1">
+                本平台僅提供資訊媒合，不介入雙方私下交易與履約過程。
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                disabled={!canConfirmSafety}
+                onClick={handleConfirmSafety}
+                className={cn(
+                  "w-full py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-sm",
+                  canConfirmSafety
+                    ? "bg-indigo-600 hover:bg-indigo-700 text-white active:scale-95 cursor-pointer"
+                    : "bg-slate-200 text-slate-400 cursor-not-allowed"
+                )}
+              >
+                {canConfirmSafety ? (
+                  <span>我已了解風險，顯示聯絡資訊</span>
+                ) : (
+                  <span>請閱讀安全提示 ({safetyCountdown}s)</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );
