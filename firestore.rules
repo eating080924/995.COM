@@ -41,18 +41,16 @@ service cloud.firestore {
             'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
             'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
             'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount',
-            'isDeleted', 'status', 'deletedAt', 'deleteScheduledAt', 'deletionReason',
-            'noContactStrikes', 'noContactViolationsCount', 'penaltyStatus', 'bannedUntil', 'lastViolationAt', 'successfulTasksSinceViolation'
+            'isDeleted', 'status', 'deletedAt', 'deleteScheduledAt', 'deletionReason'
           ])
         ) ||
         (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'noContactViolationsCount', 'penaltyStatus', 'bannedUntil', 'lastViolationAt', 'successfulTasksSinceViolation', 'updatedAt'
+            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'noContactViolationsCount', 'penaltyStatus', 'bannedUntil', 'updatedAt'
           ])
-        ) ||
-        isAdmin()
+        )
       );
-      allow delete: if isOwner(userId) || isAdmin();
+      allow delete: if isOwner(userId);
     }
 
     function isExpired(deadline, delay) {
@@ -201,10 +199,10 @@ service cloud.firestore {
 
     // 4. Notifications Collection
     match /notifications/{notificationId} {
-      allow read: if isSignedIn() && (resource.data.get('userId', '') == request.auth.uid || isAdmin());
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
       allow create: if isSignedIn() && request.resource.data.userId is string && request.resource.data.type is string;
-      allow update: if isSignedIn() && (resource.data.get('userId', '') == request.auth.uid || isAdmin()) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
-      allow delete: if isSignedIn() && (resource.data.get('userId', '') == request.auth.uid || isAdmin());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     // 5. Ratings Collection

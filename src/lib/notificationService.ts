@@ -165,7 +165,6 @@ export async function deleteNotification(notificationId: string) {
  * Clear all notifications for a user.
  */
 export async function clearAllNotifications(userId: string) {
-  if (!userId) return;
   try {
     const notificationsRef = collection(db, 'notifications');
     const q = query(
@@ -173,19 +172,11 @@ export async function clearAllNotifications(userId: string) {
       where('userId', '==', userId)
     );
     const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) return;
-
-    const docs = querySnapshot.docs;
-    const CHUNK_SIZE = 400;
-    
-    for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
-      const chunk = docs.slice(i, i + CHUNK_SIZE);
-      const batch = writeBatch(db);
-      chunk.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
-      });
-      await batch.commit();
-    }
+    const batch = writeBatch(db);
+    querySnapshot.forEach((docSnap) => {
+      batch.delete(docSnap.ref);
+    });
+    await batch.commit();
   } catch (error) {
     console.error('Failed to clear all notifications:', error);
     handleFirestoreError(error, OperationType.DELETE, 'notifications');
