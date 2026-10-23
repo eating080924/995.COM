@@ -92,3 +92,14 @@ export interface Rating {
   createdAt: any;
 }
 
+export interface MaintenanceConfig {
+  isMaintenance: boolean;
+  title: string;
+  message: string;
+  estimatedEndTime?: string;
+  allowedEmails?: string[];
+  updatedAt?: any;
+  updatedBy?: string;
+}
+
+

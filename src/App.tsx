@@ -18,14 +18,26 @@ import { isInAppBrowser } from './lib/detector';
 import { AccountPrivacyPanel } from './components/AccountPrivacyPanel';
 import { CommunityLinks } from './components/CommunityLinks';
 import { TASK_CATEGORIES, TAIWAN_REGIONS } from './config/achievements';
-
+import { useMaintenance } from './lib/maintenanceService';
+import { MaintenanceScreen } from './components/MaintenanceScreen';
+import { MaintenanceAdminBanner } from './components/MaintenanceAdminBanner';
+import { MaintenanceAdminModal } from './components/MaintenanceAdminModal';
 
 function AppContent() {
   const { user, loading } = useAuth();
+  const { 
+    config: maintenanceConfig, 
+    loading: maintenanceLoading, 
+    isMaintenanceActive, 
+    isBypassed, 
+    saveMaintenanceConfig 
+  } = useMaintenance();
+
   const [showInAppBanner, setShowInAppBanner] = useState(true);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showBroadcastForm, setShowBroadcastForm] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showMaintenanceAdminModal, setShowMaintenanceAdminModal] = useState(false);
   const [activeTab, setActiveTab ] = useState<'all' | 'open' | 'accepted' | 'my-tasks' | 'my-accepted' | 'privacy'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -34,6 +46,7 @@ function AppContent() {
     title: string;
     message: string;
   } | null>(null);
+
 
   React.useEffect(() => {
     // Run task cleanup when user logs in
@@ -155,7 +168,7 @@ function AppContent() {
     }
   };
 
-  if (loading) {
+  if (loading || maintenanceLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
         <Loader2 className="animate-spin text-red-500 mb-4" size={40} />
@@ -164,8 +177,22 @@ function AppContent() {
     );
   }
 
+  // Intercept regular users with maintenance screen when maintenance mode is active
+  if (isMaintenanceActive && !isBypassed) {
+    return <MaintenanceScreen config={maintenanceConfig} />;
+  }
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 font-sans overflow-x-hidden">
+      {isMaintenanceActive && isBypassed && (
+        <MaintenanceAdminBanner
+          config={maintenanceConfig}
+          userEmail={user?.email}
+          onOpenAdminModal={() => setShowMaintenanceAdminModal(true)}
+          onDisableMaintenance={() => saveMaintenanceConfig({ isMaintenance: false })}
+        />
+      )}
+
       {showInAppBanner && isInAppBrowser() && !user && (
         <div className="bg-amber-500 text-white px-4 py-3.5 flex items-center justify-between text-xs gap-3 font-semibold relative z-50 shadow-md">
           <div className="flex items-center gap-2">
@@ -186,7 +213,10 @@ function AppContent() {
         onNewTask={() => requireLogin(() => setShowTaskForm(true))} 
         onNewBroadcast={() => requireLogin(() => setShowBroadcastForm(true))}
         onGoHome={handleGoHome}
+        onOpenMaintenanceAdmin={() => setShowMaintenanceAdminModal(true)}
+        isMaintenanceActive={isMaintenanceActive}
       />
+
       
       <BroadcastMarquee />
 
@@ -429,6 +459,15 @@ function AppContent() {
       )}
 
       <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+
+      {showMaintenanceAdminModal && (
+        <MaintenanceAdminModal
+          isOpen={showMaintenanceAdminModal}
+          onClose={() => setShowMaintenanceAdminModal(false)}
+          config={maintenanceConfig}
+          onSave={saveMaintenanceConfig}
+        />
+      )}
     </div>
   );
 }
