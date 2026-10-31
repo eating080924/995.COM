@@ -5,7 +5,7 @@ WORKDIR /app
 
 # 複製套件清單進行依賴安裝（利用 Docker 緩存機制加速後續建置）
 COPY package*.json ./
-RUN npm ci
+RUN npm ci || npm install
 
 # 複製專案其餘檔案
 COPY . .
@@ -24,11 +24,11 @@ ENV PORT=8080
 
 # 僅安裝生產環境所需的套件（如 express、firebase 等，排除開發依賴）
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev || npm install --omit=dev
 
 # 從編譯階段複製打包好的 dist 目錄與設定檔到運行容器中
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/firebase-applet-config.json ./
+COPY --from=builder /app/firebase-applet-config.json* ./
 
 # 宣告對外 Port（Cloud Run 容器預設監聽 8080）
 EXPOSE 8080
