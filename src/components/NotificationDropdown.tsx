@@ -10,6 +10,7 @@ import {
 } from '../lib/notificationService';
 import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { auth } from '../lib/firebase';
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
@@ -54,9 +55,16 @@ async function subscribeUserToPush(userId: string) {
     });
 
     // 3. Send subscription to backend
+    const currentUser = auth.currentUser;
+    const idToken = currentUser ? await currentUser.getIdToken().catch(() => null) : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (idToken) {
+      headers['Authorization'] = `Bearer ${idToken}`;
+    }
+
     const subRes = await fetch('/api/subscribe-push', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         userId,
         subscription

@@ -19,10 +19,7 @@ service cloud.firestore {
       return isSignedIn() && 
              request.auth.token.email_verified == true &&
              request.auth.token.email in [
-               'eating080924@gmail.com',
-               'very790804@gmail.com',
-               'ooi12361@gmail.com',
-               'a0939633109@gmail.com'
+               'eating080924@gmail.com'
              ];
     }
 
@@ -35,22 +32,59 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isOwner(userId);
       allow update: if isSignedIn() && (
+        // Admin full update
+        isAdmin() ||
+        // User updating their own profile
         (
           isOwner(userId) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'displayName', 'photoURL', 'updatedAt', 'lastCancelledAt',
             'preferredCategories', 'preferredRegions', 'activeTitle', 'earnedTitles',
             'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount',
-            'isDeleted', 'status', 'deletedAt', 'deleteScheduledAt', 'deletionReason'
-          ])
+            'isDeleted', 'status', 'deletedAt', 'deleteScheduledAt', 'deletionReason',
+            'successfulTasksSinceViolation', 'lastViolationAt',
+            'penaltyStatus', 'bannedUntil', 'noContactViolationsCount', 'noContactStrikes'
+          ]) &&
+          // Cannot arbitrarily remove suspended status unless bannedUntil has expired
+          (
+            resource.data.get('penaltyStatus', 'none') != 'suspended' ||
+            (request.resource.data.penaltyStatus == 'none' && resource.data.get('bannedUntil', null) != null && request.time >= resource.data.bannedUntil) ||
+            request.resource.data.penaltyStatus == 'suspended'
+          ) &&
+          // Cannot decrease violations count unless cooldown period (30 days) has passed
+          (
+            request.resource.data.get('noContactViolationsCount', 0) >= resource.data.get('noContactViolationsCount', 0) ||
+            (resource.data.get('lastViolationAt', null) != null && request.time >= resource.data.lastViolationAt + duration.value(30, 'd'))
+          )
         ) ||
+        // Peer user updating after task completion / rating (strictly restricted)
         (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 'noContactStrikes', 'noContactViolationsCount', 'penaltyStatus', 'bannedUntil', 'updatedAt'
-          ])
+          !isOwner(userId) &&
+          (
+            // Rating and stats calculation
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 
+              'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 
+              'successfulTasksSinceViolation', 'updatedAt'
+            ]) ||
+            // Strictly verified strike increment (+1 only) when an owner reports no contact
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'noContactViolationsCount', 'noContactStrikes', 'penaltyStatus', 
+                'bannedUntil', 'lastViolationAt', 'successfulTasksSinceViolation', 'updatedAt'
+              ]) &&
+              request.resource.data.noContactViolationsCount == resource.data.get('noContactViolationsCount', 0) + 1 &&
+              (
+                (request.resource.data.noContactViolationsCount < 3 && request.resource.data.penaltyStatus == 'none') ||
+                (request.resource.data.noContactViolationsCount == 3 && request.resource.data.penaltyStatus == 'suspended' && request.resource.data.bannedUntil <= request.time + duration.value(3, 'd') + duration.value(10, 'm')) ||
+                (request.resource.data.noContactViolationsCount == 4 && request.resource.data.penaltyStatus == 'suspended' && request.resource.data.bannedUntil <= request.time + duration.value(7, 'd') + duration.value(10, 'm')) ||
+                (request.resource.data.noContactViolationsCount >= 5 && request.resource.data.penaltyStatus == 'banned')
+              )
+            )
+          )
         )
       );
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     function isExpired(deadline, delay) {
@@ -194,7 +228,8 @@ service cloud.firestore {
                       request.resource.data.content.size() <= 100 &&
                       request.resource.data.creatorId == request.auth.uid &&
                       request.resource.data.userName is string &&
-                      request.resource.data.activeUntil > request.time;
+                      request.resource.data.activeUntil > request.time &&
+                      request.resource.data.activeUntil <= request.time + duration.value(24, 'h');
     }
 
     // 4. Notifications Collection
@@ -215,14 +250,14 @@ service cloud.firestore {
                     request.resource.data.createdAt == request.time;
     }
 
-    // 6. Config Collection (For storing server VAPID keys)
+    // 6. Config Collection (Secured - Server-only / No client access)
     match /config/{configId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
-    // 7. Push Subscriptions Collection (For storing Web Push subscriptions)
+    // 7. Push Subscriptions Collection (Secured - Server-only / No client access)
     match /push_subscriptions/{subId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
     // 8. Violation Logs Collection

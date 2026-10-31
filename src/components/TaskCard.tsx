@@ -56,10 +56,6 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
 
   // Check if user already has a valid 7-day safety consent in localStorage
   const checkSafetyConsentValid = () => {
-    // -------------------------------------------------------------
-    // 🧪 測試專用：強制回傳 false，讓 7 天限制暫時失效
-    return false; 
-    // -------------------------------------------------------------
     try {
       const agreedUntil = localStorage.getItem('contact_safety_agreed_until');
       if (agreedUntil) {
