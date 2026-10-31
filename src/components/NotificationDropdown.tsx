@@ -8,13 +8,11 @@ import {
   clearAllNotifications,
   AppNotification 
 } from '../lib/notificationService';
-import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink, Send, Loader2, CheckCircle2 } from 'lucide-react';
+import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth } from '../lib/firebase';
-import { cn } from '../lib/utils';
 
 function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding)
     .replace(/\-/g, '+')
     .replace(/_/g, '/');
@@ -28,82 +26,37 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray;
 }
 
-async function subscribeUserToPush(userId: string): Promise<{ success: boolean; message?: string }> {
+async function subscribeUserToPush(userId: string) {
   try {
-    if (typeof window === 'undefined') return { success: false, message: '非瀏覽器環境' };
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
       console.warn('Push messaging is not supported in this browser.');
-      return { success: false, message: '您的瀏覽器不支援 Web Push 桌面/背景推播' };
+      return;
     }
 
-    // Wait for service worker to be ready with a safety timeout
-    let registration: ServiceWorkerRegistration;
-    try {
-      const reg = await navigator.serviceWorker.getRegistration();
-      if (reg) {
-        registration = reg;
-      } else {
-        registration = await navigator.serviceWorker.register('/sw.js');
-      }
-      
-      const readyPromise = navigator.serviceWorker.ready;
-      const timeoutPromise = new Promise<ServiceWorkerRegistration>((_, reject) =>
-        setTimeout(() => reject(new Error('Service Worker 初始化超時')), 8000)
-      );
-      registration = await Promise.race([readyPromise, timeoutPromise]);
-    } catch (e: any) {
-      console.warn('Service worker registration fallback:', e);
-      registration = await navigator.serviceWorker.ready;
-    }
-
+    const registration = await navigator.serviceWorker.ready;
+    
     // 1. Fetch public VAPID key from backend
     const keyRes = await fetch('/api/vapid-public-key');
-    if (!keyRes.ok) throw new Error('無法取得 VAPID 推播公鑰');
+    if (!keyRes.ok) throw new Error('Failed to fetch VAPID public key');
     const { publicKey } = await keyRes.json();
 
     if (!publicKey) {
       console.warn('VAPID public key is empty on the server.');
-      return { success: false, message: '伺服器未設定推播公鑰' };
+      return;
     }
 
     const convertedVapidKey = urlBase64ToUint8Array(publicKey);
 
-    // 2. Unsubscribe any stale subscription to avoid "different applicationServerKey" conflict
-    try {
-      const existingSub = await registration.pushManager.getSubscription();
-      if (existingSub) {
-        await existingSub.unsubscribe();
-      }
-    } catch (unsubErr) {
-      console.warn('Could not clean old push subscription:', unsubErr);
-    }
-
-    // 3. Subscribe with current applicationServerKey
+    // 2. Subscribe to Push Manager
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: convertedVapidKey
     });
 
-    // 4. Send subscription to backend with verified ID token
-    let idToken: string | null = null;
-    if (auth.currentUser) {
-      idToken = await auth.currentUser.getIdToken(true).catch(() => null);
-    }
-    if (!idToken) {
-      await new Promise(r => setTimeout(r, 600));
-      if (auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken(true).catch(() => null);
-      }
-    }
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
-    }
-
+    // 3. Send subscription to backend
     const subRes = await fetch('/api/subscribe-push', {
       method: 'POST',
-      headers,
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId,
         subscription
@@ -112,15 +65,11 @@ async function subscribeUserToPush(userId: string): Promise<{ success: boolean; 
 
     if (subRes.ok) {
       console.log('Successfully subscribed user to background push notifications!');
-      return { success: true };
     } else {
-      const errText = await subRes.text();
-      console.error('Failed to register subscription with server:', errText);
-      return { success: false, message: errText };
+      console.error('Failed to register subscription with server:', await subRes.text());
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error subscribing to push notifications:', error);
-    return { success: false, message: error?.message || '註冊推播時發生錯誤' };
   }
 }
 
@@ -136,9 +85,6 @@ export function NotificationDropdown() {
   });
   const [showPwaGuide, setShowPwaGuide] = useState(false);
   const [showConfirmClear, setShowConfirmClear] = useState(false);
-  const [isPushSubscribed, setIsPushSubscribed] = useState(false);
-  const [isTestingPush, setIsTestingPush] = useState(false);
-  const [pushTestMessage, setPushTestMessage] = useState<{ text: string; success: boolean } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Register Service Worker for background and mobile notifications
@@ -157,48 +103,18 @@ export function NotificationDropdown() {
   // Automatically subscribe to background push notifications when user is logged in and permission is granted
   useEffect(() => {
     if (user && desktopPermission === 'granted') {
-      subscribeUserToPush(user.uid).then((res) => {
-        setIsPushSubscribed(res.success);
-      });
+      subscribeUserToPush(user.uid);
     }
   }, [user, desktopPermission]);
 
-  // Subscribe to real-time notifications with foreground alert integration
+  // Subscribe to real-time notifications
   useEffect(() => {
     if (!user) {
       setNotifications([]);
       return;
     }
 
-    let isInitialLoad = true;
     const unsubscribe = subscribeNotifications(user.uid, (updatedList) => {
-      // Trigger foreground/local desktop notification if new notification arrives after load
-      if (!isInitialLoad && updatedList.length > 0) {
-        const latest = updatedList[0];
-        if (!latest.read && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
-          try {
-            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-              navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title: latest.taskContent?.slice(0, 30) || '任務進度更新 🚀',
-                options: {
-                  body: latest.taskContent || '',
-                  icon: '/icon-192.png',
-                  badge: '/icon-192.png',
-                }
-              });
-            } else {
-              new Notification(latest.taskContent?.slice(0, 30) || '任務進度更新 🚀', {
-                body: latest.taskContent || '',
-                icon: '/icon-192.png',
-              });
-            }
-          } catch (e) {
-            console.warn('Foreground notification trigger error:', e);
-          }
-        }
-      }
-      isInitialLoad = false;
       setNotifications(updatedList);
     });
 
@@ -229,7 +145,6 @@ export function NotificationDropdown() {
 
   const requestDesktopPermission = async () => {
     if (!('Notification' in window)) {
-      alert('您的瀏覽器不支援通知功能');
       return;
     }
     
@@ -237,66 +152,10 @@ export function NotificationDropdown() {
       const permission = await Notification.requestPermission();
       setDesktopPermission(permission);
       if (permission === 'granted' && user) {
-        const res = await subscribeUserToPush(user.uid);
-        setIsPushSubscribed(res.success);
-        if (!res.success && res.message) {
-          setPushTestMessage({ text: `推播註冊提醒：${res.message}`, success: false });
-        }
+        subscribeUserToPush(user.uid);
       }
     } catch (error) {
       console.error('Error requesting notification permission:', error);
-    }
-  };
-
-  const handleTestPushNotification = async () => {
-    if (!user) return;
-    setIsTestingPush(true);
-    setPushTestMessage(null);
-
-    try {
-      // 1. Ensure push subscription is active
-      const subRes = await subscribeUserToPush(user.uid);
-      if (!subRes.success) {
-        setPushTestMessage({ text: `推播訂閱失敗：${subRes.message || '無法連線至推播伺服器'}`, success: false });
-        setIsTestingPush(false);
-        return;
-      }
-      setIsPushSubscribed(true);
-
-      // 2. Obtain fresh ID token
-      const idToken = await auth.currentUser?.getIdToken(true);
-      if (!idToken) {
-        throw new Error('無法取得驗證憑證，請重新登入');
-      }
-
-      // 3. Trigger test push via backend proxy
-      const response = await fetch('/api/send-push', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({
-          userId: user.uid,
-          type: 'rpa_push',
-          taskNum: 'TEST-PUSH',
-          taskContent: '🚀 這是一則推播測試訊息！您的瀏覽器與系統已成功接收到背景推播！',
-          senderId: user.uid,
-          senderName: '系統管理員',
-        }),
-      });
-
-      const resData = await response.json();
-      if (response.ok && resData.success) {
-        setPushTestMessage({ text: '🎉 測試推播已發送！請檢查桌面、手機通知欄或稍候片刻。', success: true });
-      } else {
-        setPushTestMessage({ text: `發送失敗：${resData.error || resData.message || '未知錯誤'}`, success: false });
-      }
-    } catch (err: any) {
-      console.error('Test push error:', err);
-      setPushTestMessage({ text: `測試推播異常：${err.message || '連線逾時'}`, success: false });
-    } finally {
-      setIsTestingPush(false);
     }
   };
 
@@ -498,49 +357,12 @@ export function NotificationDropdown() {
                   </button>
                 </div>
               ) : desktopPermission === 'granted' ? (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="text-emerald-700 font-bold flex items-center gap-1">
-                      <span>🟢 瀏覽器推播已啟用</span>
-                      {isPushSubscribed && (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
-                          背景已連線
-                        </span>
-                      )}
-                    </div>
-                    <button
-                      onClick={handleTestPushNotification}
-                      disabled={isTestingPush}
-                      className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                      title="發送一則推播至本裝置以測試功能"
-                    >
-                      {isTestingPush ? (
-                        <>
-                          <Loader2 size={11} className="animate-spin text-red-500" />
-                          <span>測試中...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send size={11} className="text-red-500" />
-                          <span>發送測試推播</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                  {pushTestMessage && (
-                    <div className={cn(
-                      "p-2 rounded-lg text-[10px] font-bold flex items-center gap-1.5 border animate-fade-in",
-                      pushTestMessage.success ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
-                    )}>
-                      {pushTestMessage.success ? <CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> : <AlertCircle size={12} className="shrink-0 text-red-600" />}
-                      <span>{pushTestMessage.text}</span>
-                    </div>
-                  )}
+                <div className="text-emerald-700 font-bold flex items-center gap-1">
+                  <span>🟢 瀏覽器通知已啟用，將會收到即時狀態更新！</span>
                 </div>
               ) : (
-                <div className="text-red-600 font-bold flex items-center gap-1">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>⚠️ 瀏覽器通知已被封鎖。若要接收即時推播，請至瀏覽器設定中開啟。</span>
+                <div className="text-red-600 font-bold">
+                  <span>⚠️ 瀏覽器通知已被封鎖。若要接收通知，請至瀏覽器設定中開啟。</span>
                 </div>
               )}
 

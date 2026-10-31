@@ -56,7 +56,8 @@ export function BroadcastMarquee() {
     const now = Timestamp.now();
     const q = query(
       collection(db, 'broadcasts'),
-      where('activeUntil', '>', now)
+      where('activeUntil', '>', now),
+      orderBy('createdAt', 'asc') // Show older ones first
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -64,12 +65,6 @@ export function BroadcastMarquee() {
         id: doc.id,
         ...doc.data()
       })) as Broadcast[];
-      // Sort older ones first in memory to avoid compound index requirements
-      docs.sort((a, b) => {
-        const timeA = a.createdAt?.seconds ?? 0;
-        const timeB = b.createdAt?.seconds ?? 0;
-        return timeA - timeB;
-      });
       setBroadcasts(docs);
     }, (error) => {
       console.warn('BroadcastMarquee onSnapshot subscription error (client may be offline/connecting):', error);

@@ -212,17 +212,14 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
           const qReg = query(collection(db, 'users'), where('preferredRegions', 'array-contains', data.region));
           const [snapCat, snapReg] = await Promise.all([getDocs(qCat), getDocs(qReg)]);
           
-          const catUids = new Set<string>();
+          const uids = new Set<string>();
           snapCat.forEach(doc => {
-            if (doc.id !== user.uid) catUids.add(doc.id);
+            if (doc.id !== user.uid) uids.add(doc.id);
           });
-          const intersectionUids: string[] = [];
           snapReg.forEach(doc => {
-            if (doc.id !== user.uid && catUids.has(doc.id)) {
-              intersectionUids.push(doc.id);
-            }
+            if (doc.id !== user.uid) uids.add(doc.id);
           });
-          matchedUserIds = intersectionUids;
+          matchedUserIds = Array.from(uids);
         } catch (queryErr) {
           console.warn('Failed to query matching user preferences client-side:', queryErr);
         }

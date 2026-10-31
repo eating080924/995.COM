@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { collection, query, orderBy, onSnapshot, where, limit } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Task } from '../types';
 import { TaskCard } from './TaskCard';
@@ -73,8 +73,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
       q = query(
         tasksRef, 
         where('status', 'in', ['open', 'accepted']),
-        orderBy('createdAt', 'desc'),
-        limit(50)
+        orderBy('createdAt', 'desc')
       );
     } else if (filter === 'my-tasks') {
       if (!user) {
@@ -84,8 +83,7 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
       }
       q = query(
         tasksRef, 
-        where('requesterId', '==', user.uid),
-        limit(50)
+        where('requesterId', '==', user.uid)
       );
     } else if (filter === 'my-accepted') {
       if (!user) {
@@ -95,16 +93,14 @@ export function TaskList({ filter, searchQuery, categoryFilter, regionFilter, on
       }
       q = query(
         tasksRef, 
-        where('acceptorId', '==', user.uid),
-        limit(50)
+        where('acceptorId', '==', user.uid)
       );
     } else {
       // filter is 'open' or 'accepted'
       q = query(
         tasksRef,
         where('status', '==', filter),
-        orderBy('createdAt', 'desc'),
-        limit(50)
+        orderBy('createdAt', 'desc')
       );
     }
 

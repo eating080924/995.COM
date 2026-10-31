@@ -39,10 +39,11 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # --- 步驟 3: 設定 Docker 登入 GCP Artifact Registry 與 GCR ---
+      # --- 步驟 3: 設定 Docker 登入 GCP Artifact Registry 或 GCR ---
+      # 這裡我們使用舊版的 Google Container Registry (gcr.io)，設定極為簡單快速
       - name: Authorize Docker
         run: |
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev,gcr.io --quiet
+          gcloud auth configure-docker gcr.io --quiet
 
       # --- 步驟 4: 建置 Docker 映像檔並上傳至 Container Registry ---
       - name: Build and Push Container
