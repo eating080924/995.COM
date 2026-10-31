@@ -30,13 +30,7 @@ const adminAuth = getAuth(adminApp);
 const VAPID_FILE = path.join(process.cwd(), ".vapid_keys.json");
 const SUBSCRIPTIONS_FILE = path.join(process.cwd(), ".push_subscriptions.json");
 
-// Stable server VAPID keypair fallback to ensure push subscriptions never become invalid across container restarts
-const DEFAULT_STABLE_VAPID = {
-  publicKey: "BGGCkNV_D0lA-BWme-b4oyTju1t73wL9wBOIGOE1c7h5xTPB8Bm1n1b1HwDOpyUzoCWNkbn2yiQovsUcUalV9q0",
-  privateKey: "HtX30W4Kp7HEN-_V0dEdBguSjCtyEPJZTUdL2kN4q4w"
-};
-
-let vapidKeys = { ...DEFAULT_STABLE_VAPID };
+let vapidKeys = { publicKey: "", privateKey: "" };
 let storedSubscriptions: Array<{ userId: string; subscription: any }> = [];
 
 function loadSubscriptionsFromDisk(): Array<{ userId: string; subscription: any }> {
@@ -75,13 +69,13 @@ function initVapid() {
         vapidKeys = saved;
         console.log("VAPID keys loaded from server-side storage.");
       }
-    } else {
-      // 3. Fallback to constant stable VAPID keypair so mobile device tokens never mismatch
-      vapidKeys = { ...DEFAULT_STABLE_VAPID };
-      try {
-        fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
-      } catch {}
-      console.log("Stable production VAPID keys loaded.");
+    }
+
+    // 3. Generate new keys if none exist
+    if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
+      vapidKeys = webpush.generateVAPIDKeys();
+      fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
+      console.log("New server-side VAPID keys generated and secured.");
     }
 
     webpush.setVapidDetails(
@@ -90,8 +84,8 @@ function initVapid() {
       vapidKeys.privateKey
     );
   } catch (e) {
-    console.error("Failed to initialize VAPID keys, using stable fallback:", e);
-    vapidKeys = { ...DEFAULT_STABLE_VAPID };
+    console.error("Failed to initialize VAPID keys, using ephemeral fallback:", e);
+    vapidKeys = webpush.generateVAPIDKeys();
     try {
       webpush.setVapidDetails(
         "mailto:eating080924@gmail.com",
@@ -103,7 +97,7 @@ function initVapid() {
 
   // Load subscriptions into memory cache
   storedSubscriptions = loadSubscriptionsFromDisk();
-  console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure storage.`);
+  console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure local storage.`);
 }
 
 // Rate limiter: Max 60 push calls per minute per IP
@@ -196,14 +190,13 @@ async function startServer() {
       storedSubscriptions.shift();
     }
     saveSubscriptionsToDisk();
-    console.log(`[Push] User ${userId} registered subscription: ${subscription.endpoint.slice(0, 35)}... (Total: ${storedSubscriptions.length})`);
 
-    res.status(200).json({ success: true, count: storedSubscriptions.length });
+    res.status(200).json({ success: true });
   });
 
   // Web Push API: Send Push notification (authenticated, rate-limited, sender-verified)
   app.post("/api/send-push", pushRateLimiter, authenticateUser, async (req, res) => {
-    const { userId, type, taskId, taskNum, taskContent, senderId, senderName, customTitle, category, region } = req.body;
+    const { userId, type, taskId, taskNum, taskContent, senderId, senderName } = req.body;
     if (!userId || !type) {
       return res.status(400).json({ error: "Missing required notification details: userId and type are mandatory" });
     }
@@ -218,7 +211,6 @@ async function startServer() {
     }
 
     const safeTaskNum = taskNum || "N/A";
-    const shortTaskNum = safeTaskNum.length > 6 ? safeTaskNum.slice(-5) : safeTaskNum;
     const safeTaskContent = taskContent || "";
     const safeSenderName = senderName || "平台用戶";
 
@@ -226,13 +218,12 @@ async function startServer() {
       // Find matching subscriptions for this user
       const userSubs = storedSubscriptions.filter((s) => s.userId === userId);
       if (userSubs.length === 0) {
-        console.log(`[Push] No active push subscriptions found for user ${userId}`);
         return res.status(200).json({ success: false, message: "目前尚無此用戶有效的推播憑證 (No active push subscriptions found)", count: 0 });
       }
 
       // Build personalized localization messages matching NotificationDropdown.tsx
       let title = "任務進度更新 🚀";
-      let body = `${safeTaskContent.slice(0, 45)}...\n（編號：#${shortTaskNum}）`;
+      let body = `任務 [${safeTaskNum}] ${safeTaskContent.slice(0, 30)}... \n異動者: ${safeSenderName}`;
 
       if (safeTaskContent.includes("已回報與您取得聯繫") || safeTaskContent.includes("已回報主動聯繫") || safeTaskContent.includes("主動聯繫委託人")) {
         title = "承接者已回報主動聯繫 📞";
@@ -242,19 +233,19 @@ async function startServer() {
         body = `超人 ${safeSenderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`;
       } else if (safeTaskContent.includes("您已向承接者提出") || safeTaskContent.includes("已向承接者提出")) {
         title = "已向承接者提出「完工異議」 ⚖️";
-        body = `您已對任務 [#${shortTaskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`;
+        body = `您已對任務 [${safeTaskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`;
       } else if (safeTaskContent.includes("完工異議") || safeTaskContent.includes("提出異議")) {
         title = "委託者已提出「完工異議」 ⚠️";
-        body = `委託人 ${safeSenderName} 對任務 [#${shortTaskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`;
+        body = `委託人 ${safeSenderName} 對任務 [${safeTaskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`;
       } else if (type === "task_accepted") {
         title = "任務被承接 🚀";
-        body = `您的委託任務 [#${shortTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
+        body = `您的委託任務 [${safeTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
       } else if (type === "task_unaccepted") {
         title = "任務取消承接 ⚠️";
-        body = `承接人 ${safeSenderName} 取消承接您的委託任務 [#${shortTaskNum}]，任務已重新開放。`;
+        body = `承接人 ${safeSenderName} 取消承接您的委託任務 [${safeTaskNum}]，任務已重新開放。`;
       } else if (type === "task_completed") {
         title = "委託完成結案 🎉";
-        body = `您承接的委託任務 [#${shortTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
+        body = `您承接的委託任務 [${safeTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
       } else if (type === "agent_invite") {
         title = "任務委託邀請 💌";
         body = `委託人 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
@@ -262,48 +253,29 @@ async function startServer() {
         title = `${safeSenderName} 📢`;
         body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。";
       } else if (type === "broadcast") {
-        title = customTitle || (category && region ? `🎯【${category}・${region}】新任務` : "新任務推薦 🎯");
-        let cleanContent = safeTaskContent;
-        if (cleanContent.startsWith("🎯 任務推薦：")) {
-          const splitIdx = cleanContent.indexOf("：\n");
-          if (splitIdx !== -1) {
-            cleanContent = cleanContent.slice(splitIdx + 2);
-          }
-        }
-        const trimmed = cleanContent.slice(0, 50) + (cleanContent.length > 50 ? "..." : "");
-        body = `${trimmed}\n（編號：#${shortTaskNum}）`;
+        title = "任務推薦 🎯";
+        body = safeTaskContent || "您有一則新的任務推薦！點擊查看詳情。";
       }
 
       const payload = {
         title,
         body,
         url: "/",
-        taskId,
-        taskNum: shortTaskNum,
-        tag: `task-${shortTaskNum}`
       };
 
-      console.log(`[Push] Dispatching high-urgency Web Push to user ${userId} (${userSubs.length} devices)`);
       let hasStale = false;
       const sendPromises = userSubs.map(async (sub) => {
         try {
-          await webpush.sendNotification(
-            sub.subscription,
-            JSON.stringify(payload),
-            {
-              TTL: 86400, // 24 hours retention
-              urgency: "high" // Immediately wake up mobile device / lock screen
-            }
-          );
+          await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`[Push] Pruning stale subscription for user ${userId}`);
+            console.log(`Pruning stale subscription for user ${userId}`);
             storedSubscriptions = storedSubscriptions.filter(
               (s) => s.subscription.endpoint !== sub.subscription.endpoint
             );
             hasStale = true;
           } else {
-            console.error(`[Push] Error sending Web Push:`, err.message);
+            console.error(`Error sending Web Push to subscription:`, err.message);
           }
         }
       });
@@ -313,7 +285,7 @@ async function startServer() {
 
       res.status(200).json({ success: true, count: userSubs.length });
     } catch (error: any) {
-      console.error("[Push] Error in send-push API execution:", error);
+      console.error("Error in send-push API execution:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -337,44 +309,31 @@ async function startServer() {
       const matchingSubs = storedSubscriptions.filter((s) => matchedUserIds.has(s.userId));
 
       if (matchingSubs.length === 0) {
-        console.log(`[Push] No push subscriptions for matched users:`, userIdsArray);
         return res.status(200).json({ success: true, message: "Matched users found, but no active push subscriptions" });
       }
 
-      const shortNum = taskNum.length > 6 ? taskNum.slice(-5) : taskNum;
-      const title = `🎯【${category}・${region}】新任務`;
-      const trimmed = safeTaskContent.slice(0, 50) + (safeTaskContent.length > 50 ? "..." : "");
-      const body = `${trimmed}\n（編號：#${shortNum}）`;
+      const title = "任務推薦 🎯 符合您的偏好設定！";
+      const body = `「${category}」於「${region}」有新發布任務：\n${safeTaskContent.slice(0, 30)}${safeTaskContent.length > 30 ? "..." : ""}\n發布人: ${safeSenderName}`;
 
       const payload = {
         title,
         body,
         url: "/",
-        taskNum: shortNum,
-        tag: `task-${shortNum}`
       };
 
-      console.log(`[Push] Dispatching match push to ${matchingSubs.length} device subscriptions`);
       let hasStale = false;
       const sendPromises = matchingSubs.map(async (sub) => {
         try {
-          await webpush.sendNotification(
-            sub.subscription,
-            JSON.stringify(payload),
-            {
-              TTL: 86400,
-              urgency: "high"
-            }
-          );
+          await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`[Push] Pruning stale subscription for user ${sub.userId}`);
+            console.log(`Pruning stale subscription for user ${sub.userId}`);
             storedSubscriptions = storedSubscriptions.filter(
               (s) => s.subscription.endpoint !== sub.subscription.endpoint
             );
             hasStale = true;
           } else {
-            console.error(`[Push] Error sending Match Web Push:`, err.message);
+            console.error(`Error sending Match Web Push to subscription:`, err.message);
           }
         }
       });
@@ -384,7 +343,7 @@ async function startServer() {
 
       res.status(200).json({ success: true, notifiedCount: matchingSubs.length });
     } catch (error: any) {
-      console.error("[Push] Error in send-matching-push API execution:", error);
+      console.error("Error in send-matching-push API execution:", error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -26,9 +26,6 @@ export interface AppNotification {
   senderName: string;
   read: boolean;
   createdAt: any;
-  customTitle?: string;
-  category?: string;
-  region?: string;
 }
 
 /**
@@ -42,9 +39,6 @@ export async function sendNotification(params: {
   taskContent: string;
   senderId: string;
   senderName: string;
-  customTitle?: string;
-  category?: string;
-  region?: string;
 }) {
   if (!params.userId || params.userId === params.senderId) {
     // No need to send notification to oneself
@@ -53,7 +47,7 @@ export async function sendNotification(params: {
 
   try {
     const notificationsRef = collection(db, 'notifications');
-    const docData: any = {
+    await addDoc(notificationsRef, {
       userId: params.userId,
       type: params.type,
       taskId: params.taskId,
@@ -63,12 +57,7 @@ export async function sendNotification(params: {
       senderName: params.senderName,
       read: false,
       createdAt: serverTimestamp(),
-    };
-    if (params.customTitle) docData.customTitle = params.customTitle;
-    if (params.category) docData.category = params.category;
-    if (params.region) docData.region = params.region;
-
-    await addDoc(notificationsRef, docData);
+    });
 
     // Also trigger background Web Push notification via backend API proxy
     try {
@@ -123,9 +112,6 @@ export function subscribeNotifications(
         senderName: data.senderName,
         read: data.read || false,
         createdAt: data.createdAt,
-        customTitle: data.customTitle,
-        category: data.category,
-        region: data.region,
       });
     });
     onUpdate(notifications);

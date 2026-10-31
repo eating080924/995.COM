@@ -229,7 +229,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
 
         // Create in-app notifications in Firestore for matched users (which also triggers 1 background Web Push via sendNotification)
         if (matchedUserIds.length > 0) {
-          const cleanContent = data.content.slice(0, 50) + (data.content.length > 50 ? '...' : '');
+          const taskContentSummary = `🎯 任務推薦：【${data.category}】在【${data.region}】有新發布任務「${taskNum}」：\n${data.content.slice(0, 40)}${data.content.length > 40 ? '...' : ''}`;
           try {
             await Promise.allSettled(
               matchedUserIds.map((recipientUid) =>
@@ -238,10 +238,7 @@ export function TaskForm({ onClose, taskToEdit }: TaskFormProps) {
                   type: 'broadcast',
                   taskId: taskDocRef.id,
                   taskNum,
-                  taskContent: cleanContent,
-                  customTitle: `🎯【${data.category}・${data.region}】新任務`,
-                  category: data.category,
-                  region: data.region,
+                  taskContent: taskContentSummary,
                   senderId: user.uid,
                   senderName: user.displayName || '平台用戶',
                 })
