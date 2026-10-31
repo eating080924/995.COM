@@ -569,6 +569,132 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
           isDeleted?: boolean;
         }>();
 
+        // 1. Query experts who completed this category in the past
+        try {
+          const completedQ = query(
+            collection(db, 'tasks'),
+            where('category', '==', task.category),
+            where('status', '==', 'completed')
+          );
+          const completedSnap = await getDocs(completedQ);
+          completedSnap.forEach((docSnap) => {
+            const t = docSnap.data();
+            if (t.acceptorId && t.acceptorId !== user.uid) {
+              const existing = expertsMap.get(t.acceptorId);
+              if (existing) {
+                existing.count += 1;
+              } else {
+                expertsMap.set(t.acceptorId, {
+                  uid: t.acceptorId,
+                  displayName: t.acceptorName || '超人',
+                  count: 1,
+                  rating: 5.0,
+                  ratingCount: 1,
+                  activeTitle: '',
+                  noContactViolationsCount: 0,
+                  matchReason: '🏆 類別達人',
+                });
+              }
+            }
+          });
+        } catch (e1) {
+          console.warn('Completed category query note:', e1);
+        }
+
+        // 2. Query users who set this category as preferred
+        try {
+          const prefQ = query(
+            collection(db, 'users'),
+            where('preferredCategories', 'array-contains', task.category)
+          );
+          const prefSnap = await getDocs(prefQ);
+          prefSnap.forEach((docSnap) => {
+            const u = docSnap.data();
+            if (docSnap.id !== user.uid) {
+              const existing = expertsMap.get(docSnap.id);
+              if (existing) {
+                existing.rating = u.averageRating || existing.rating || 5.0;
+                existing.ratingCount = u.ratingCount || existing.ratingCount || 0;
+                existing.activeTitle = u.activeTitle || existing.activeTitle || '';
+                existing.noContactViolationsCount = u.noContactViolationsCount || u.noContactStrikes || 0;
+              } else {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: '🎯 專長偏好符合',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
+            }
+          });
+        } catch (e2) {
+          console.warn('Preferred categories query note:', e2);
+        }
+
+        // 3. Fallback: If fewer than 4 candidates, query users who serve in this region
+        if (expertsMap.size < 4 && task.region) {
+          try {
+            const regQ = query(
+              collection(db, 'users'),
+              where('preferredRegions', 'array-contains', task.region)
+            );
+            const regSnap = await getDocs(regQ);
+            regSnap.forEach((docSnap) => {
+              const u = docSnap.data();
+              if (docSnap.id !== user.uid && !expertsMap.has(docSnap.id)) {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: '📍 同區超人',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
+            });
+          } catch (e3) {
+            console.warn('Preferred regions query note:', e3);
+          }
+        }
+
+        // 4. Fallback: If still fewer than 4 candidates, query active platform supermen
+        if (expertsMap.size < 4) {
+          try {
+            const generalUsersQ = query(collection(db, 'users'));
+            const generalUsersSnap = await getDocs(generalUsersQ);
+            generalUsersSnap.forEach((docSnap) => {
+              if (expertsMap.size >= 8) return;
+              const u = docSnap.data();
+              if (docSnap.id !== user.uid && !expertsMap.has(docSnap.id)) {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: u.completedAsAcceptorCount ? '⭐ 活躍幫手' : '🤝 推薦夥伴',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
+            });
+          } catch (e4) {
+            console.warn('General users query note:', e4);
+          }
+        }
+
         // 5. Resolve full profile details and apply quality & safety filters
         const candidateList = Array.from(expertsMap.values());
         const validExperts: any[] = [];
