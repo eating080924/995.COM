@@ -39,6 +39,7 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
   const [loadingExperts, setLoadingExperts] = useState(false);
   const [notifiedExperts, setNotifiedExperts] = useState<string[]>([]);
   const [isExpertsExpanded, setIsExpertsExpanded] = useState(false);
+  const [expertInviteToast, setExpertInviteToast] = useState<string | null>(null);
 
   // States and effects for Anti-Stuck & Auto-Timeout Mechanisms
   const [canReportNoContact, setCanReportNoContact] = useState(false);
@@ -545,103 +546,207 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
     fetchAcceptorProfile();
   }, [task.acceptorId]);
 
-  // Fetch recommended experts dynamically based on category
+  // Fetch recommended experts dynamically based on category, region, and platform activity
   useEffect(() => {
     if (!isOwner || !user || !task.category || (task.status !== 'open' && task.status !== 'accepted')) {
       return;
     }
 
+    let isMounted = true;
     const fetchMatchedExperts = async () => {
       setLoadingExperts(true);
       try {
+        const expertsMap = new Map<string, {
+          uid: string;
+          displayName: string;
+          count: number;
+          rating: number;
+          ratingCount: number;
+          activeTitle: string;
+          noContactViolationsCount: number;
+          matchReason: string;
+          penaltyStatus?: string;
+          isDeleted?: boolean;
+        }>();
+
         // 1. Query experts who completed this category in the past
-        const completedQ = query(
-          collection(db, 'tasks'),
-          where('category', '==', task.category),
-          where('status', '==', 'completed')
-        );
-        const completedSnap = await getDocs(completedQ);
-        const expertsMap = new Map<string, { uid: string; displayName: string; count: number; rating: number; ratingCount: number; activeTitle: string; noContactViolationsCount: number }>();
-
-        completedSnap.forEach((docSnap) => {
-          const t = docSnap.data();
-          if (t.acceptorId && t.acceptorId !== user.uid) {
-            const existing = expertsMap.get(t.acceptorId);
-            if (existing) {
-              existing.count += 1;
-            } else {
-              expertsMap.set(t.acceptorId, {
-                uid: t.acceptorId,
-                displayName: t.acceptorName || '超人',
-                count: 1,
-                rating: 5.0,
-                ratingCount: 1,
-                activeTitle: '',
-                noContactViolationsCount: 0
-              });
+        try {
+          const completedQ = query(
+            collection(db, 'tasks'),
+            where('category', '==', task.category),
+            where('status', '==', 'completed')
+          );
+          const completedSnap = await getDocs(completedQ);
+          completedSnap.forEach((docSnap) => {
+            const t = docSnap.data();
+            if (t.acceptorId && t.acceptorId !== user.uid) {
+              const existing = expertsMap.get(t.acceptorId);
+              if (existing) {
+                existing.count += 1;
+              } else {
+                expertsMap.set(t.acceptorId, {
+                  uid: t.acceptorId,
+                  displayName: t.acceptorName || '超人',
+                  count: 1,
+                  rating: 5.0,
+                  ratingCount: 1,
+                  activeTitle: '',
+                  noContactViolationsCount: 0,
+                  matchReason: '🏆 類別達人',
+                });
+              }
             }
-          }
-        });
+          });
+        } catch (e1) {
+          console.warn('Completed category query note:', e1);
+        }
 
-        // 2. Query users who set this category as preferred (subscription)
-        const prefQ = query(
-          collection(db, 'users'),
-          where('preferredCategories', 'array-contains', task.category)
-        );
-        const prefSnap = await getDocs(prefQ);
-        prefSnap.forEach((docSnap) => {
-          const u = docSnap.data();
-          if (docSnap.id !== user.uid) {
-            const existing = expertsMap.get(docSnap.id);
-            if (existing) {
-              existing.rating = u.averageRating || 5.0;
-              existing.ratingCount = u.ratingCount || 0;
-              existing.activeTitle = u.activeTitle || '';
-              existing.noContactViolationsCount = u.noContactViolationsCount || u.noContactStrikes || 0;
-            } else {
-              expertsMap.set(docSnap.id, {
-                uid: docSnap.id,
-                displayName: u.displayName || '超人',
-                count: 0,
-                rating: u.averageRating || 5.0,
-                ratingCount: u.ratingCount || 0,
-                activeTitle: u.activeTitle || '',
-                noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0
-              });
+        // 2. Query users who set this category as preferred
+        try {
+          const prefQ = query(
+            collection(db, 'users'),
+            where('preferredCategories', 'array-contains', task.category)
+          );
+          const prefSnap = await getDocs(prefQ);
+          prefSnap.forEach((docSnap) => {
+            const u = docSnap.data();
+            if (docSnap.id !== user.uid) {
+              const existing = expertsMap.get(docSnap.id);
+              if (existing) {
+                existing.rating = u.averageRating || existing.rating || 5.0;
+                existing.ratingCount = u.ratingCount || existing.ratingCount || 0;
+                existing.activeTitle = u.activeTitle || existing.activeTitle || '';
+                existing.noContactViolationsCount = u.noContactViolationsCount || u.noContactStrikes || 0;
+              } else {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: '🎯 專長偏好符合',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
             }
-          }
-        });
+          });
+        } catch (e2) {
+          console.warn('Preferred categories query note:', e2);
+        }
 
-        // 3. Resolve additional profile details
-        const finalExperts = Array.from(expertsMap.values());
-        for (let exp of finalExperts) {
-          const uRef = doc(db, 'users', exp.uid);
-          const uSnap = await getDoc(uRef);
-          if (uSnap.exists()) {
-            const uData = uSnap.data();
-            exp.activeTitle = uData.activeTitle || exp.activeTitle || '';
-            exp.rating = uData.averageRating || exp.rating || 5.0;
-            exp.ratingCount = uData.ratingCount || exp.ratingCount || 0;
-            exp.noContactViolationsCount = uData.noContactViolationsCount || uData.noContactStrikes || 0;
+        // 3. Fallback: If fewer than 4 candidates, query users who serve in this region
+        if (expertsMap.size < 4 && task.region) {
+          try {
+            const regQ = query(
+              collection(db, 'users'),
+              where('preferredRegions', 'array-contains', task.region)
+            );
+            const regSnap = await getDocs(regQ);
+            regSnap.forEach((docSnap) => {
+              const u = docSnap.data();
+              if (docSnap.id !== user.uid && !expertsMap.has(docSnap.id)) {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: '📍 同區超人',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
+            });
+          } catch (e3) {
+            console.warn('Preferred regions query note:', e3);
           }
         }
 
-        // Sort by completed count, then average rating
-        finalExperts.sort((a, b) => {
+        // 4. Fallback: If still fewer than 4 candidates, query active platform supermen
+        if (expertsMap.size < 4) {
+          try {
+            const generalUsersQ = query(collection(db, 'users'));
+            const generalUsersSnap = await getDocs(generalUsersQ);
+            generalUsersSnap.forEach((docSnap) => {
+              if (expertsMap.size >= 8) return;
+              const u = docSnap.data();
+              if (docSnap.id !== user.uid && !expertsMap.has(docSnap.id)) {
+                expertsMap.set(docSnap.id, {
+                  uid: docSnap.id,
+                  displayName: u.displayName || '超人',
+                  count: u.completedAsAcceptorCount || 0,
+                  rating: u.averageRating || 5.0,
+                  ratingCount: u.ratingCount || 0,
+                  activeTitle: u.activeTitle || '',
+                  noContactViolationsCount: u.noContactViolationsCount || u.noContactStrikes || 0,
+                  matchReason: u.completedAsAcceptorCount ? '⭐ 活躍幫手' : '🤝 推薦夥伴',
+                  penaltyStatus: u.penaltyStatus,
+                  isDeleted: u.isDeleted,
+                });
+              }
+            });
+          } catch (e4) {
+            console.warn('General users query note:', e4);
+          }
+        }
+
+        // 5. Resolve full profile details and apply quality & safety filters
+        const candidateList = Array.from(expertsMap.values());
+        const validExperts: any[] = [];
+
+        for (const exp of candidateList) {
+          try {
+            const uRef = doc(db, 'users', exp.uid);
+            const uSnap = await getDoc(uRef);
+            if (uSnap.exists()) {
+              const uData = uSnap.data();
+              // Safety filter: skip deleted, suspended, or banned users
+              if (uData.isDeleted || uData.status === 'deleted' || uData.penaltyStatus === 'banned' || uData.penaltyStatus === 'suspended') {
+                continue;
+              }
+              exp.displayName = uData.displayName || exp.displayName || '超人';
+              exp.activeTitle = uData.activeTitle || exp.activeTitle || '';
+              exp.rating = uData.averageRating || exp.rating || 5.0;
+              exp.ratingCount = uData.ratingCount || exp.ratingCount || 0;
+              exp.noContactViolationsCount = uData.noContactViolationsCount || uData.noContactStrikes || 0;
+              exp.count = exp.count || uData.completedAsAcceptorCount || 0;
+            }
+            validExperts.push(exp);
+          } catch (profileErr) {
+            console.warn('Error resolving expert profile:', profileErr);
+            validExperts.push(exp);
+          }
+        }
+
+        // Sort: specialists first, then higher completion count, then higher rating
+        validExperts.sort((a, b) => {
           if (b.count !== a.count) return b.count - a.count;
           return b.rating - a.rating;
         });
 
-        setMatchedExperts(finalExperts.slice(0, 3));
+        if (isMounted) {
+          setMatchedExperts(validExperts.slice(0, 4));
+        }
       } catch (err) {
         console.error('Error fetching matched experts:', err);
       } finally {
-        setLoadingExperts(false);
+        if (isMounted) {
+          setLoadingExperts(false);
+        }
       }
     };
 
     fetchMatchedExperts();
-  }, [task.id, task.category, task.status, isOwner, user]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [task.id, task.category, task.region, task.status, isOwner, user]);
 
   const handleInviteExpert = async (expertId: string, expertName: string) => {
     if (!user) return;
@@ -655,7 +760,9 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
         senderId: user.uid,
         senderName: user.displayName || user.email || '委託人',
       });
-      setNotifiedExperts([...notifiedExperts, expertId]);
+      setNotifiedExperts(prev => [...prev, expertId]);
+      setExpertInviteToast(`💌 已向超人「${expertName}」發送邀請信號彈與即時通知！`);
+      setTimeout(() => setExpertInviteToast(null), 4000);
     } catch (err) {
       console.error('Error inviting expert:', err);
     }
@@ -1724,45 +1831,60 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
               >
                 <div className="flex items-center gap-1.5 text-slate-700">
                   <span>🤝 推薦名單</span>
-                  {matchedExperts.length > 0 && (
+                  {loadingExperts ? (
+                    <Loader2 size={10} className="animate-spin text-slate-400" />
+                  ) : matchedExperts.length > 0 ? (
                     <span className="bg-red-500 text-white font-bold text-[9px] px-1.5 py-0.2 rounded-full">
                       {matchedExperts.length}
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <span className="text-[10px] text-slate-400">
                   {isExpertsExpanded ? '收折 ▲' : '點擊展開'}
                 </span>
               </button>
 
+              {expertInviteToast && (
+                <div className="mt-2 p-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-bold rounded-lg animate-fade-in flex items-center gap-1.5">
+                  <CheckCircle size={14} className="text-emerald-600 shrink-0" />
+                  <span>{expertInviteToast}</span>
+                </div>
+              )}
+
               {isExpertsExpanded && (
                 <div className="mt-2.5 animate-fade-in">
                   {loadingExperts ? (
                     <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400 gap-1.5">
                       <Loader2 size={12} className="animate-spin" />
-                      <span>自動媒合中...</span>
+                      <span>智慧媒合超人中...</span>
                     </div>
                   ) : matchedExperts.length === 0 ? (
-                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-400">
-                      暫目前尚未有此類別的結案紀錄。別擔心，本委託已自動推播給符合偏好的超人們！
+                    <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl text-center text-[10px] text-slate-500 space-y-1">
+                      <p className="font-bold">🔍 暫無專屬媒合紀錄</p>
+                      <p className="text-slate-400">別擔心，本委託已透過系統推播發送給符合地區與專長的超人們！</p>
                     </div>
                   ) : (
                     <div className="p-3 bg-red-50/40 border border-red-100/50 rounded-xl space-y-2.5">
                       <div className="flex justify-between items-center">
                         <h4 className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                          <span>「{task.category}」自動媒合系統</span>
+                          <span>「{task.category}」智慧媒合系統</span>
                         </h4>
                         <span className="text-[9px] bg-red-500 text-white font-bold px-1 rounded animate-pulse">
-                          推薦
+                          推薦 {matchedExperts.length} 位超人
                         </span>
                       </div>
                       
                       <div className="space-y-1.5">
                         {matchedExperts.map((exp) => (
-                          <div key={exp.uid} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between gap-2 shadow-sm">
-                            <div className="flex flex-col gap-0.5">
+                          <div key={exp.uid} className="bg-white p-2.5 rounded-lg border border-slate-100 flex items-center justify-between gap-2 shadow-xs">
+                            <div className="flex flex-col gap-0.5 min-w-0">
                               <div className="flex items-center gap-1 flex-wrap">
-                                <span className="text-xs font-bold text-slate-800">{exp.displayName}</span>
+                                <span className="text-xs font-bold text-slate-800 truncate">{exp.displayName}</span>
+                                {exp.matchReason && (
+                                  <span className="px-1.5 py-0.2 bg-red-50 text-red-700 font-extrabold text-[8px] border border-red-200/60 rounded">
+                                    {exp.matchReason}
+                                  </span>
+                                )}
                                 {exp.activeTitle && (
                                   <span className="px-1 py-0.2 bg-amber-50 text-amber-600 font-bold text-[8px] border border-amber-200/40 rounded">
                                     🏆 {exp.activeTitle}
@@ -1786,8 +1908,9 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[9px] text-slate-400 font-semibold">
-                                <span>結案: {exp.count}次</span>
+                              <div className="flex items-center gap-2 text-[9px] text-slate-400 font-semibold flex-wrap">
+                                <span>結案: {exp.count || 0}次</span>
+                                <span>⭐ {Number(exp.rating || 5.0).toFixed(1)} ({exp.ratingCount || 0}則評價)</span>
                               </div>
                             </div>
 
@@ -1796,13 +1919,13 @@ export const TaskCard: React.FC<{ task: Task }> = ({ task }) => {
                               onClick={() => handleInviteExpert(exp.uid, exp.displayName)}
                               disabled={notifiedExperts.includes(exp.uid)}
                               className={cn(
-                                "px-2 py-1 rounded-md text-[9px] font-black transition-all shrink-0",
+                                "px-2.5 py-1 rounded-md text-[9px] font-black transition-all shrink-0",
                                 notifiedExperts.includes(exp.uid)
                                   ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-                                  : "bg-red-500 hover:bg-red-600 text-white active:scale-95"
+                                  : "bg-red-500 hover:bg-red-600 text-white active:scale-95 shadow-xs"
                               )}
                             >
-                              {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '發出信號彈'}
+                              {notifiedExperts.includes(exp.uid) ? '已發送邀請 ✔️' : '發出信號彈 🚀'}
                             </button>
                           </div>
                         ))}

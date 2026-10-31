@@ -100,10 +100,10 @@ function initVapid() {
   console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure local storage.`);
 }
 
-// Rate limiter: Max 30 push calls per minute per IP
+// Rate limiter: Max 60 push calls per minute per IP
 const pushRateLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 30,
+  max: 60,
   standardHeaders: true,
   legacyHeaders: false,
   validate: {
@@ -218,7 +218,7 @@ async function startServer() {
       // Find matching subscriptions for this user
       const userSubs = storedSubscriptions.filter((s) => s.userId === userId);
       if (userSubs.length === 0) {
-        return res.status(200).json({ success: true, message: "No active push subscriptions found" });
+        return res.status(200).json({ success: false, message: "目前尚無此用戶有效的推播憑證 (No active push subscriptions found)", count: 0 });
       }
 
       // Build personalized localization messages matching NotificationDropdown.tsx
