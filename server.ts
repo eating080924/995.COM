@@ -2,9 +2,8 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { createProxyMiddleware } from "http-proxy-middleware";
-import { initializeApp, getApps } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import rateLimit from "express-rate-limit";
+import admin from "firebase-admin";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import webpush from "web-push";
 
 // Load Firebase configuration safely
@@ -20,115 +19,135 @@ try {
   console.error("Failed to parse firebase-applet-config.json:", err);
 }
 
-const PROJECT_ID = firebaseConfig?.projectId || "com-515d4";
-
-// Initialize Firebase Admin SDK for auth token verification
-const adminApp = getApps().length ? getApps()[0] : initializeApp({ projectId: PROJECT_ID });
-const adminAuth = getAuth(adminApp);
-
-// Local persistence paths for server-only security
-const VAPID_FILE = path.join(process.cwd(), ".vapid_keys.json");
-const SUBSCRIPTIONS_FILE = path.join(process.cwd(), ".push_subscriptions.json");
-
 let vapidKeys = { publicKey: "", privateKey: "" };
-let storedSubscriptions: Array<{ userId: string; subscription: any }> = [];
+let localSubscriptionsFallback: Array<{ userId: string; subscription: any }> = [];
 
-function loadSubscriptionsFromDisk(): Array<{ userId: string; subscription: any }> {
-  try {
-    if (fs.existsSync(SUBSCRIPTIONS_FILE)) {
-      const data = JSON.parse(fs.readFileSync(SUBSCRIPTIONS_FILE, "utf8"));
-      if (Array.isArray(data)) return data;
-    }
-  } catch (e) {
-    console.warn("Could not read local subscriptions file:", e);
-  }
-  return [];
-}
+const PROJECT_ID = firebaseConfig?.projectId || "com-515d4";
+const DATABASE_ID = firebaseConfig?.firestoreDatabaseId || "db995com";
+const FIREBASE_API_KEY = firebaseConfig?.apiKey || "AIzaSyClrfh8Z4TE98tmBmMKCj_HkV-Pf_NOzFE";
 
-function saveSubscriptionsToDisk() {
-  try {
-    fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(storedSubscriptions, null, 2), "utf8");
-  } catch (e) {
-    console.warn("Could not save local subscriptions file:", e);
-  }
-}
-
-function initVapid() {
-  try {
-    // 1. Check environment variables
-    if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-      vapidKeys = {
-        publicKey: process.env.VAPID_PUBLIC_KEY,
-        privateKey: process.env.VAPID_PRIVATE_KEY,
-      };
-      console.log("VAPID keys loaded from environment variables.");
-    } else if (fs.existsSync(VAPID_FILE)) {
-      // 2. Check server-side local storage
-      const saved = JSON.parse(fs.readFileSync(VAPID_FILE, "utf8"));
-      if (saved.publicKey && saved.privateKey) {
-        vapidKeys = saved;
-        console.log("VAPID keys loaded from server-side storage.");
+// Convert flat JS object to Firestore REST fields helper
+function toFirestoreFields(obj: any): any {
+  const fields: any = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === null || val === undefined) continue;
+    if (typeof val === "string") {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === "number") {
+      fields[key] = { doubleValue: val };
+    } else if (typeof val === "boolean") {
+      fields[key] = { booleanValue: val };
+    } else if (val && typeof val === "object") {
+      if (Array.isArray(val)) {
+        fields[key] = {
+          arrayValue: {
+            values: val.map(item => {
+              if (typeof item === "string") return { stringValue: item };
+              if (typeof item === "number") return { doubleValue: item };
+              if (typeof item === "boolean") return { booleanValue: item };
+              return { mapValue: { fields: toFirestoreFields(item) } };
+            })
+          }
+        };
+      } else {
+        fields[key] = { mapValue: { fields: toFirestoreFields(val) } };
       }
     }
+  }
+  return fields;
+}
 
-    // 3. Generate new keys if none exist
-    if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
-      vapidKeys = webpush.generateVAPIDKeys();
-      fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
-      console.log("New server-side VAPID keys generated and secured.");
+// Convert Firestore REST fields helper to flat JS object
+function fromFirestoreFields(fields: any): any {
+  if (!fields) return {};
+  const obj: any = {};
+  for (const [key, valueObj] of Object.entries(fields)) {
+    const vo = valueObj as any;
+    if (vo === null || vo === undefined) continue;
+    if ("stringValue" in vo) {
+      obj[key] = vo.stringValue;
+    } else if ("doubleValue" in vo) {
+      obj[key] = Number(vo.doubleValue);
+    } else if ("integerValue" in vo) {
+      obj[key] = Number(vo.integerValue);
+    } else if ("booleanValue" in vo) {
+      obj[key] = vo.booleanValue;
+    } else if ("mapValue" in vo) {
+      obj[key] = fromFirestoreFields(vo.mapValue.fields);
+    } else if ("arrayValue" in vo) {
+      const vals = vo.arrayValue.values || [];
+      obj[key] = vals.map((v: any) => {
+        if ("stringValue" in v) return v.stringValue;
+        if ("doubleValue" in v) return Number(v.doubleValue);
+        if ("integerValue" in v) return Number(v.integerValue);
+        if ("booleanValue" in v) return v.booleanValue;
+        if ("mapValue" in v) return fromFirestoreFields(v.mapValue.fields);
+        return v;
+      });
     }
+  }
+  return obj;
+}
 
+async function fetchFromFirestore(collection: string, docId: string) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    if (res.status === 404) return null;
+    throw new Error(`Firestore REST API returned ${res.status}: ${await res.text()}`);
+  }
+  return await res.json();
+}
+
+async function writeToFirestore(collection: string, docId: string, fields: any) {
+  const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/${collection}/${docId}?key=${FIREBASE_API_KEY}`;
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    throw new Error(`Firestore REST API write returned ${res.status}: ${await res.text()}`);
+  }
+  return await res.json();
+}
+
+async function initVapid() {
+  try {
+    const docData = await fetchFromFirestore("config", "vapid");
+    if (docData && docData.fields) {
+      const flat = fromFirestoreFields(docData.fields);
+      if (flat.publicKey && flat.privateKey) {
+        vapidKeys = {
+          publicKey: flat.publicKey,
+          privateKey: flat.privateKey,
+        };
+        console.log("VAPID keys loaded from Firestore via REST API.");
+      }
+    } else {
+      // Generate new VAPID keys
+      const keys = webpush.generateVAPIDKeys();
+      await writeToFirestore("config", "vapid", toFirestoreFields({
+        publicKey: keys.publicKey,
+        privateKey: keys.privateKey,
+        createdAt: new Date().toISOString(),
+      }));
+      vapidKeys = keys;
+      console.log("New VAPID keys generated and stored in Firestore via REST API.");
+    }
+  } catch (e) {
+    console.error("Failed to load/store VAPID keys in Firestore via REST, using memory fallback:", e);
+    vapidKeys = webpush.generateVAPIDKeys();
+  }
+
+  try {
     webpush.setVapidDetails(
       "mailto:eating080924@gmail.com",
       vapidKeys.publicKey,
       vapidKeys.privateKey
     );
   } catch (e) {
-    console.error("Failed to initialize VAPID keys, using ephemeral fallback:", e);
-    vapidKeys = webpush.generateVAPIDKeys();
-    try {
-      webpush.setVapidDetails(
-        "mailto:eating080924@gmail.com",
-        vapidKeys.publicKey,
-        vapidKeys.privateKey
-      );
-    } catch {}
-  }
-
-  // Load subscriptions into memory cache
-  storedSubscriptions = loadSubscriptionsFromDisk();
-  console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure local storage.`);
-}
-
-// Rate limiter: Max 60 push calls per minute per IP
-const pushRateLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  validate: {
-    xForwardedForHeader: false,
-    forwardedHeader: false,
-    default: false,
-  },
-  message: { error: "請求過於頻繁，請稍候再試 (Rate limit exceeded)" },
-});
-
-// Authentication middleware using Firebase Admin ID Token verification
-async function authenticateUser(req: express.Request, res: express.Response, next: express.NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "未授權：缺少驗證憑證 (Missing Authorization token)" });
-  }
-
-  const token = authHeader.split("Bearer ")[1].trim();
-  try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
-    (req as any).user = decodedToken;
-    next();
-  } catch (err: any) {
-    console.warn("Failed to verify Firebase ID token in API:", err.message);
-    return res.status(401).json({ error: "未授權：憑證無效或已過期 (Invalid or expired token)" });
+    console.error("Failed to set VAPID details for web-push:", e);
   }
 }
 
@@ -136,20 +155,21 @@ async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  // Trust first proxy hop in container/cloud environments
-  app.set("trust proxy", 1);
-
   // Middleware to parse incoming JSON payloads
   app.use(express.json());
 
   // Initialize VAPID Keys
-  initVapid();
+  await initVapid();
 
   // Proxy Firebase Auth endpoints to bypass Safari/iOS Chrome third-party cookie restrictions (ITP)
   app.use(
     "/__/auth",
     (req, res, next) => {
+      // Restore the /__/auth prefix because Express app.use("/__/auth") stripped it,
+      // but http-proxy-middleware needs the full path to forward correctly.
       req.url = req.originalUrl;
+
+      // Strip headers that confuse Firebase Hosting routing
       delete req.headers["x-forwarded-host"];
       delete req.headers["x-forwarded-proto"];
       delete req.headers["x-forwarded-for"];
@@ -164,50 +184,50 @@ async function startServer() {
     })
   );
 
-  // Web Push API: Public VAPID key endpoint (safe to expose publicly)
+  // Web Push API Endpoints
   app.get("/api/vapid-public-key", (req, res) => {
     res.json({ publicKey: vapidKeys.publicKey });
   });
 
-  // Web Push API: Subscribe endpoint (authenticated & rate-limited)
-  app.post("/api/subscribe-push", pushRateLimiter, authenticateUser, (req, res) => {
+  app.post("/api/subscribe-push", async (req, res) => {
     const { userId, subscription } = req.body;
     if (!userId || !subscription || !subscription.endpoint) {
       return res.status(400).json({ error: "Missing userId or subscription details" });
     }
 
-    const callerUid = (req as any).user.uid;
-    if (callerUid !== userId) {
-      return res.status(403).json({ error: "Forbidden: Cannot register subscription for another user" });
-    }
+    const saveToMemoryFallback = () => {
+      localSubscriptionsFallback = localSubscriptionsFallback.filter(
+        (s) => !(s.userId === userId && s.subscription.endpoint === subscription.endpoint)
+      );
+      localSubscriptionsFallback.push({ userId, subscription });
+      if (localSubscriptionsFallback.length > 200) {
+        localSubscriptionsFallback.shift(); // Prevent memory unbounded growth
+      }
+    };
 
-    // Deduplicate and save
-    storedSubscriptions = storedSubscriptions.filter(
-      (s) => !(s.userId === userId && s.subscription.endpoint === subscription.endpoint)
-    );
-    storedSubscriptions.push({ userId, subscription });
-    if (storedSubscriptions.length > 5000) {
-      storedSubscriptions.shift();
-    }
-    saveSubscriptionsToDisk();
+    try {
+      // Create a unique document ID by hashing the endpoint URL to prevent duplicate records
+      const endpointHash = Buffer.from(subscription.endpoint).toString("base64url").slice(-100);
+      const docId = `${userId}_${endpointHash}`;
 
-    res.status(200).json({ success: true });
+      await writeToFirestore("push_subscriptions", docId, toFirestoreFields({
+        userId,
+        subscription,
+        updatedAt: new Date().toISOString(),
+      }));
+
+      res.status(200).json({ success: true });
+    } catch (error: any) {
+      console.warn("Error saving push subscription via REST, falling back to memory:", error);
+      saveToMemoryFallback();
+      res.status(200).json({ success: true, message: "Subscription registered in in-memory fallback cache" });
+    }
   });
 
-  // Web Push API: Send Push notification (authenticated, rate-limited, sender-verified)
-  app.post("/api/send-push", pushRateLimiter, authenticateUser, async (req, res) => {
+  app.post("/api/send-push", async (req, res) => {
     const { userId, type, taskId, taskNum, taskContent, senderId, senderName } = req.body;
     if (!userId || !type) {
       return res.status(400).json({ error: "Missing required notification details: userId and type are mandatory" });
-    }
-
-    const callerUid = (req as any).user.uid;
-    const callerEmail = (req as any).user.email;
-    const isSystemAdmin = callerEmail === "eating080924@gmail.com";
-
-    // Anti-spoofing check: senderId must match authenticated caller or system admin
-    if (!isSystemAdmin && senderId && senderId !== "system" && senderId !== callerUid) {
-      return res.status(403).json({ error: "Forbidden: Sender ID does not match authenticated user" });
     }
 
     const safeTaskNum = taskNum || "N/A";
@@ -215,10 +235,77 @@ async function startServer() {
     const safeSenderName = senderName || "平台用戶";
 
     try {
-      // Find matching subscriptions for this user
-      const userSubs = storedSubscriptions.filter((s) => s.userId === userId);
-      if (userSubs.length === 0) {
-        return res.status(200).json({ success: false, message: "目前尚無此用戶有效的推播憑證 (No active push subscriptions found)", count: 0 });
+      let subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
+
+      try {
+        const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+        const queryBody = {
+          structuredQuery: {
+            from: [{ collectionId: "push_subscriptions" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "EQUAL",
+                value: { stringValue: userId }
+              }
+            }
+          }
+        };
+
+        const queryRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(queryBody),
+        });
+
+        if (queryRes.ok) {
+          const results = await queryRes.json();
+          for (const r of results) {
+            if (r.document && r.document.fields) {
+              const flat = fromFirestoreFields(r.document.fields);
+              const docPath = r.document.name;
+              const docId = docPath.substring(docPath.lastIndexOf("/") + 1);
+
+              subscriptions.push({
+                id: docId,
+                subscription: flat.subscription,
+                delete: async () => {
+                  try {
+                    const delUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+                    await fetch(delUrl, { method: "DELETE" });
+                  } catch (delErr) {
+                    console.warn(`Could not delete stale subscription via REST API:`, delErr);
+                  }
+                }
+              });
+            }
+          }
+        } else {
+          console.warn("Firestore REST query failed, trying memory fallback:", await queryRes.text());
+        }
+      } catch (restErr) {
+        console.warn("Firestore REST connection error, trying memory fallback:", restErr);
+      }
+
+      // Add subscriptions from local fallback cache if we have them
+      const localMatches = localSubscriptionsFallback.filter((s) => s.userId === userId);
+      for (let i = 0; i < localMatches.length; i++) {
+        const s = localMatches[i];
+        if (!subscriptions.some(existing => existing.subscription.endpoint === s.subscription.endpoint)) {
+          subscriptions.push({
+            id: `local_${i}`,
+            subscription: s.subscription,
+            delete: async () => {
+              localSubscriptionsFallback = localSubscriptionsFallback.filter(
+                (item) => item.subscription.endpoint !== s.subscription.endpoint
+              );
+            }
+          });
+        }
+      }
+
+      if (subscriptions.length === 0) {
+        return res.status(200).json({ success: true, message: "No active push subscriptions found" });
       }
 
       // Build personalized localization messages matching NotificationDropdown.tsx
@@ -250,8 +337,8 @@ async function startServer() {
         title = "任務委託邀請 💌";
         body = `委託人 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
       } else if (type === "rpa_push") {
-        title = `${safeSenderName} 📢`;
-        body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。";
+        title = `${safeSenderName} 📢`; // 標題顯示：推播者名稱 📢
+        body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。"; // 內文直接顯示 Python 傳來的推播內容
       } else if (type === "broadcast") {
         title = "任務推薦 🎯";
         body = safeTaskContent || "您有一則新的任務推薦！點擊查看詳情。";
@@ -263,35 +350,28 @@ async function startServer() {
         url: "/",
       };
 
-      let hasStale = false;
-      const sendPromises = userSubs.map(async (sub) => {
+      const sendPromises = subscriptions.map(async (sub) => {
         try {
           await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`Pruning stale subscription for user ${userId}`);
-            storedSubscriptions = storedSubscriptions.filter(
-              (s) => s.subscription.endpoint !== sub.subscription.endpoint
-            );
-            hasStale = true;
+            console.log(`Deleting stale subscription: ${sub.id}`);
+            await sub.delete();
           } else {
-            console.error(`Error sending Web Push to subscription:`, err.message);
+            console.error(`Error sending Web Push to subscription ${sub.id}:`, err);
           }
         }
       });
 
       await Promise.all(sendPromises);
-      if (hasStale) saveSubscriptionsToDisk();
-
-      res.status(200).json({ success: true, count: userSubs.length });
+      res.status(200).json({ success: true });
     } catch (error: any) {
       console.error("Error in send-push API execution:", error);
       res.status(500).json({ error: error.message });
     }
   });
 
-  // Web Push API: Send Matching Push notification (authenticated, rate-limited, sender-verified)
-  app.post("/api/send-matching-push", pushRateLimiter, authenticateUser, async (req, res) => {
+  app.post("/api/send-matching-push", async (req, res) => {
     const { userIds, category, region, taskNum, taskContent, senderId, senderName } = req.body;
     if (!category || !region || !taskNum) {
       return res.status(400).json({ error: "Missing required details: category, region, and taskNum are mandatory" });
@@ -299,6 +379,7 @@ async function startServer() {
 
     const safeTaskContent = taskContent || "";
     const safeSenderName = senderName || "平台用戶";
+
     const userIdsArray = Array.isArray(userIds) ? userIds : [];
     if (userIdsArray.length === 0) {
       return res.status(200).json({ success: true, message: "No matched users found" });
@@ -306,12 +387,95 @@ async function startServer() {
 
     try {
       const matchedUserIds = new Set<string>(userIdsArray);
-      const matchingSubs = storedSubscriptions.filter((s) => matchedUserIds.has(s.userId));
 
-      if (matchingSubs.length === 0) {
-        return res.status(200).json({ success: true, message: "Matched users found, but no active push subscriptions" });
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+
+      // Fetch push subscriptions for all matched users
+      const uidsArray = Array.from(matchedUserIds);
+      const chunkSize = 30;
+      const fetchSubscriptionPromises = [];
+
+      for (let i = 0; i < uidsArray.length; i += chunkSize) {
+        const chunk = uidsArray.slice(i, i + chunkSize);
+        const querySubBody = {
+          structuredQuery: {
+            from: [{ collectionId: "push_subscriptions" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "IN",
+                value: {
+                  arrayValue: {
+                    values: chunk.map(uid => ({ stringValue: uid }))
+                  }
+                }
+              }
+            }
+          }
+        };
+
+        fetchSubscriptionPromises.push(
+          fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(querySubBody),
+          }).then(r => r.ok ? r.json() : [])
+        );
       }
 
+      const subResultsArray = await Promise.all(fetchSubscriptionPromises);
+
+      const subscriptions: Array<{ id: string; subscription: any; delete: () => Promise<void> }> = [];
+      for (const results of subResultsArray) {
+        if (Array.isArray(results)) {
+          for (const r of results) {
+            if (r.document && r.document.fields) {
+              const flat = fromFirestoreFields(r.document.fields);
+              const docPath = r.document.name;
+              const docId = docPath.substring(docPath.lastIndexOf("/") + 1);
+
+              // Avoid duplicate subscriptions
+              if (!subscriptions.some(existing => existing.subscription.endpoint === flat.subscription.endpoint)) {
+                subscriptions.push({
+                  id: docId,
+                  subscription: flat.subscription,
+                  delete: async () => {
+                    try {
+                      const delUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+                      await fetch(delUrl, { method: "DELETE" });
+                    } catch (delErr) {
+                      console.warn(`Could not delete stale subscription via REST API:`, delErr);
+                    }
+                  }
+                });
+              }
+            }
+          }
+        }
+      }
+
+      // Add subscriptions from local fallback cache if we have them
+      const localMatches = localSubscriptionsFallback.filter((s) => matchedUserIds.has(s.userId));
+      for (let i = 0; i < localMatches.length; i++) {
+        const s = localMatches[i];
+        if (!subscriptions.some(existing => existing.subscription.endpoint === s.subscription.endpoint)) {
+          subscriptions.push({
+            id: `local_${i}`,
+            subscription: s.subscription,
+            delete: async () => {
+              localSubscriptionsFallback = localSubscriptionsFallback.filter(
+                (item) => item.subscription.endpoint !== s.subscription.endpoint
+              );
+            }
+          });
+        }
+      }
+
+      if (subscriptions.length === 0) {
+        return res.status(200).json({ success: true, message: "Matched users found, but they have no push subscriptions" });
+      }
+
+      // Send the match notifications
       const title = "任務推薦 🎯 符合您的偏好設定！";
       const body = `「${category}」於「${region}」有新發布任務：\n${safeTaskContent.slice(0, 30)}${safeTaskContent.length > 30 ? "..." : ""}\n發布人: ${safeSenderName}`;
 
@@ -321,27 +485,21 @@ async function startServer() {
         url: "/",
       };
 
-      let hasStale = false;
-      const sendPromises = matchingSubs.map(async (sub) => {
+      const sendPromises = subscriptions.map(async (sub) => {
         try {
           await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`Pruning stale subscription for user ${sub.userId}`);
-            storedSubscriptions = storedSubscriptions.filter(
-              (s) => s.subscription.endpoint !== sub.subscription.endpoint
-            );
-            hasStale = true;
+            console.log(`Deleting stale subscription: ${sub.id}`);
+            await sub.delete();
           } else {
-            console.error(`Error sending Match Web Push to subscription:`, err.message);
+            console.error(`Error sending Match Web Push to subscription ${sub.id}:`, err);
           }
         }
       });
 
       await Promise.all(sendPromises);
-      if (hasStale) saveSubscriptionsToDisk();
-
-      res.status(200).json({ success: true, notifiedCount: matchingSubs.length });
+      res.status(200).json({ success: true, matchedCount: matchedUserIds.size, notifiedCount: subscriptions.length });
     } catch (error: any) {
       console.error("Error in send-matching-push API execution:", error);
       res.status(500).json({ error: error.message });
@@ -356,12 +514,26 @@ async function startServer() {
 
   // In production, serve build artifacts. Otherwise, plug in Vite middleware
   if (process.env.NODE_ENV !== "production") {
+    // Dynamically import Vite to avoid loading it in production (where it might trigger ERR_REQUIRE_ESM)
     const viteModule = await (Function("return import(\"vite\")")() as Promise<typeof import("vite")>);
     const vite = await viteModule.createServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+
+    app.use("*", async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        const indexPath = path.resolve(process.cwd(), "index.html");
+        let template = fs.readFileSync(indexPath, "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
