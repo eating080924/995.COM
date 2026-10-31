@@ -106,6 +106,11 @@ const pushRateLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  validate: {
+    xForwardedForHeader: false,
+    forwardedHeader: false,
+    default: false,
+  },
   message: { error: "請求過於頻繁，請稍候再試 (Rate limit exceeded)" },
 });
 
@@ -130,6 +135,9 @@ async function authenticateUser(req: express.Request, res: express.Response, nex
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+
+  // Trust first proxy hop in container/cloud environments
+  app.set("trust proxy", 1);
 
   // Middleware to parse incoming JSON payloads
   app.use(express.json());
