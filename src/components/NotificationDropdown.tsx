@@ -177,19 +177,24 @@ export function NotificationDropdown() {
         const latest = updatedList[0];
         if (!latest.read && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
           try {
+            const details = getNotificationDetails(latest);
+            const shortNum = latest.taskNum && latest.taskNum.length > 6 ? latest.taskNum.slice(-5) : latest.taskNum;
+            const notifTitle = details.title;
+            const notifBody = `${details.desc}\n（編號：#${shortNum}）`;
+
             if (navigator.serviceWorker && navigator.serviceWorker.controller) {
               navigator.serviceWorker.controller.postMessage({
                 type: 'SHOW_NOTIFICATION',
-                title: latest.taskContent?.slice(0, 30) || '任務進度更新 🚀',
+                title: notifTitle,
                 options: {
-                  body: latest.taskContent || '',
+                  body: notifBody,
                   icon: '/icon-192.png',
                   badge: '/icon-192.png',
                 }
               });
             } else {
-              new Notification(latest.taskContent?.slice(0, 30) || '任務進度更新 🚀', {
-                body: latest.taskContent || '',
+              new Notification(notifTitle, {
+                body: notifBody,
                 icon: '/icon-192.png',
               });
             }
@@ -379,13 +384,22 @@ export function NotificationDropdown() {
           badgeColor: 'bg-red-500',
           desc: `${n.senderName} 向您發出了專屬推播訊息！請點擊查看。`,
         };
-      case 'broadcast':
+      case 'broadcast': {
+        const title = n.customTitle || (n.category && n.region ? `🎯【${n.category}・${n.region}】新任務` : '新任務推薦 🎯');
+        let cleanContent = n.taskContent || '';
+        if (cleanContent.startsWith('🎯 任務推薦：')) {
+          const splitIdx = cleanContent.indexOf('：\n');
+          if (splitIdx !== -1) {
+            cleanContent = cleanContent.slice(splitIdx + 2);
+          }
+        }
         return {
-          title: '任務推薦 🎯',
+          title,
           color: 'bg-purple-50 text-purple-700 border-purple-100',
           badgeColor: 'bg-purple-500',
-          desc: n.taskContent || `有符合您偏好的新發布任務：[${n.taskNum}]`,
+          desc: cleanContent || '有符合您偏好的新發布任務',
         };
+      }
       default:
         return {
           title: '系統通知 📢',
@@ -647,13 +661,13 @@ export function NotificationDropdown() {
                         <p className="text-xs font-semibold text-slate-600 leading-relaxed">
                           {details.desc}
                         </p>
-                        {n.taskContent && (
+                        {n.taskContent && n.type !== 'broadcast' && (
                           <div className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded-lg border border-slate-100 line-clamp-2 italic">
                             「{n.taskContent}」
                           </div>
                         )}
                         <div className="text-[9px] text-slate-400 font-bold flex items-center justify-between pt-1">
-                          <span>編號：{n.taskNum}</span>
+                          <span>編號：#{n.taskNum && n.taskNum.length > 6 ? n.taskNum.slice(-5) : n.taskNum}</span>
                         </div>
                       </div>
                     </div>

@@ -196,7 +196,7 @@ async function startServer() {
 
   // Web Push API: Send Push notification (authenticated, rate-limited, sender-verified)
   app.post("/api/send-push", pushRateLimiter, authenticateUser, async (req, res) => {
-    const { userId, type, taskId, taskNum, taskContent, senderId, senderName } = req.body;
+    const { userId, type, taskId, taskNum, taskContent, senderId, senderName, customTitle, category, region } = req.body;
     if (!userId || !type) {
       return res.status(400).json({ error: "Missing required notification details: userId and type are mandatory" });
     }
@@ -211,6 +211,7 @@ async function startServer() {
     }
 
     const safeTaskNum = taskNum || "N/A";
+    const shortTaskNum = safeTaskNum.length > 6 ? safeTaskNum.slice(-5) : safeTaskNum;
     const safeTaskContent = taskContent || "";
     const safeSenderName = senderName || "平台用戶";
 
@@ -223,7 +224,7 @@ async function startServer() {
 
       // Build personalized localization messages matching NotificationDropdown.tsx
       let title = "任務進度更新 🚀";
-      let body = `任務 [${safeTaskNum}] ${safeTaskContent.slice(0, 30)}... \n異動者: ${safeSenderName}`;
+      let body = `${safeTaskContent.slice(0, 45)}...\n（編號：#${shortTaskNum}）`;
 
       if (safeTaskContent.includes("已回報與您取得聯繫") || safeTaskContent.includes("已回報主動聯繫") || safeTaskContent.includes("主動聯繫委託人")) {
         title = "承接者已回報主動聯繫 📞";
@@ -233,19 +234,19 @@ async function startServer() {
         body = `超人 ${safeSenderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`;
       } else if (safeTaskContent.includes("您已向承接者提出") || safeTaskContent.includes("已向承接者提出")) {
         title = "已向承接者提出「完工異議」 ⚖️";
-        body = `您已對任務 [${safeTaskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`;
+        body = `您已對任務 [#${shortTaskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`;
       } else if (safeTaskContent.includes("完工異議") || safeTaskContent.includes("提出異議")) {
         title = "委託者已提出「完工異議」 ⚠️";
-        body = `委託人 ${safeSenderName} 對任務 [${safeTaskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`;
+        body = `委託人 ${safeSenderName} 對任務 [#${shortTaskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`;
       } else if (type === "task_accepted") {
         title = "任務被承接 🚀";
-        body = `您的委託任務 [${safeTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
+        body = `您的委託任務 [#${shortTaskNum}] 已被 ${safeSenderName} 承接，請留意後續進度。`;
       } else if (type === "task_unaccepted") {
         title = "任務取消承接 ⚠️";
-        body = `承接人 ${safeSenderName} 取消承接您的委託任務 [${safeTaskNum}]，任務已重新開放。`;
+        body = `承接人 ${safeSenderName} 取消承接您的委託任務 [#${shortTaskNum}]，任務已重新開放。`;
       } else if (type === "task_completed") {
         title = "委託完成結案 🎉";
-        body = `您承接的委託任務 [${safeTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
+        body = `您承接的委託任務 [#${shortTaskNum}] 已由委託人 ${safeSenderName} 審核完成並結案！`;
       } else if (type === "agent_invite") {
         title = "任務委託邀請 💌";
         body = `委託人 ${safeSenderName} 向您發出了專屬委託邀請！請點擊查看。`;
@@ -253,8 +254,16 @@ async function startServer() {
         title = `${safeSenderName} 📢`;
         body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。";
       } else if (type === "broadcast") {
-        title = "任務推薦 🎯";
-        body = safeTaskContent || "您有一則新的任務推薦！點擊查看詳情。";
+        title = customTitle || (category && region ? `🎯【${category}・${region}】新任務` : "新任務推薦 🎯");
+        let cleanContent = safeTaskContent;
+        if (cleanContent.startsWith("🎯 任務推薦：")) {
+          const splitIdx = cleanContent.indexOf("：\n");
+          if (splitIdx !== -1) {
+            cleanContent = cleanContent.slice(splitIdx + 2);
+          }
+        }
+        const trimmed = cleanContent.slice(0, 50) + (cleanContent.length > 50 ? "..." : "");
+        body = `${trimmed}\n（編號：#${shortTaskNum}）`;
       }
 
       const payload = {
@@ -312,8 +321,10 @@ async function startServer() {
         return res.status(200).json({ success: true, message: "Matched users found, but no active push subscriptions" });
       }
 
-      const title = "任務推薦 🎯 符合您的偏好設定！";
-      const body = `「${category}」於「${region}」有新發布任務：\n${safeTaskContent.slice(0, 30)}${safeTaskContent.length > 30 ? "..." : ""}\n發布人: ${safeSenderName}`;
+      const shortNum = taskNum.length > 6 ? taskNum.slice(-5) : taskNum;
+      const title = `🎯【${category}・${region}】新任務`;
+      const trimmed = safeTaskContent.slice(0, 50) + (safeTaskContent.length > 50 ? "..." : "");
+      const body = `${trimmed}\n（編號：#${shortNum}）`;
 
       const payload = {
         title,
