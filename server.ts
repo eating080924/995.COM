@@ -30,7 +30,13 @@ const adminAuth = getAuth(adminApp);
 const VAPID_FILE = path.join(process.cwd(), ".vapid_keys.json");
 const SUBSCRIPTIONS_FILE = path.join(process.cwd(), ".push_subscriptions.json");
 
-let vapidKeys = { publicKey: "", privateKey: "" };
+// Stable server VAPID keypair fallback to ensure push subscriptions never become invalid across container restarts
+const DEFAULT_STABLE_VAPID = {
+  publicKey: "BGGCkNV_D0lA-BWme-b4oyTju1t73wL9wBOIGOE1c7h5xTPB8Bm1n1b1HwDOpyUzoCWNkbn2yiQovsUcUalV9q0",
+  privateKey: "HtX30W4Kp7HEN-_V0dEdBguSjCtyEPJZTUdL2kN4q4w"
+};
+
+let vapidKeys = { ...DEFAULT_STABLE_VAPID };
 let storedSubscriptions: Array<{ userId: string; subscription: any }> = [];
 
 function loadSubscriptionsFromDisk(): Array<{ userId: string; subscription: any }> {
@@ -69,13 +75,13 @@ function initVapid() {
         vapidKeys = saved;
         console.log("VAPID keys loaded from server-side storage.");
       }
-    }
-
-    // 3. Generate new keys if none exist
-    if (!vapidKeys.publicKey || !vapidKeys.privateKey) {
-      vapidKeys = webpush.generateVAPIDKeys();
-      fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
-      console.log("New server-side VAPID keys generated and secured.");
+    } else {
+      // 3. Fallback to constant stable VAPID keypair so mobile device tokens never mismatch
+      vapidKeys = { ...DEFAULT_STABLE_VAPID };
+      try {
+        fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
+      } catch {}
+      console.log("Stable production VAPID keys loaded.");
     }
 
     webpush.setVapidDetails(
@@ -84,8 +90,8 @@ function initVapid() {
       vapidKeys.privateKey
     );
   } catch (e) {
-    console.error("Failed to initialize VAPID keys, using ephemeral fallback:", e);
-    vapidKeys = webpush.generateVAPIDKeys();
+    console.error("Failed to initialize VAPID keys, using stable fallback:", e);
+    vapidKeys = { ...DEFAULT_STABLE_VAPID };
     try {
       webpush.setVapidDetails(
         "mailto:eating080924@gmail.com",
@@ -97,7 +103,7 @@ function initVapid() {
 
   // Load subscriptions into memory cache
   storedSubscriptions = loadSubscriptionsFromDisk();
-  console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure local storage.`);
+  console.log(`Loaded ${storedSubscriptions.length} push subscriptions from secure storage.`);
 }
 
 // Rate limiter: Max 60 push calls per minute per IP
@@ -190,8 +196,9 @@ async function startServer() {
       storedSubscriptions.shift();
     }
     saveSubscriptionsToDisk();
+    console.log(`[Push] User ${userId} registered subscription: ${subscription.endpoint.slice(0, 35)}... (Total: ${storedSubscriptions.length})`);
 
-    res.status(200).json({ success: true });
+    res.status(200).json({ success: true, count: storedSubscriptions.length });
   });
 
   // Web Push API: Send Push notification (authenticated, rate-limited, sender-verified)
@@ -219,6 +226,7 @@ async function startServer() {
       // Find matching subscriptions for this user
       const userSubs = storedSubscriptions.filter((s) => s.userId === userId);
       if (userSubs.length === 0) {
+        console.log(`[Push] No active push subscriptions found for user ${userId}`);
         return res.status(200).json({ success: false, message: "目前尚無此用戶有效的推播憑證 (No active push subscriptions found)", count: 0 });
       }
 
@@ -270,21 +278,32 @@ async function startServer() {
         title,
         body,
         url: "/",
+        taskId,
+        taskNum: shortTaskNum,
+        tag: `task-${shortTaskNum}`
       };
 
+      console.log(`[Push] Dispatching high-urgency Web Push to user ${userId} (${userSubs.length} devices)`);
       let hasStale = false;
       const sendPromises = userSubs.map(async (sub) => {
         try {
-          await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
+          await webpush.sendNotification(
+            sub.subscription,
+            JSON.stringify(payload),
+            {
+              TTL: 86400, // 24 hours retention
+              urgency: "high" // Immediately wake up mobile device / lock screen
+            }
+          );
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`Pruning stale subscription for user ${userId}`);
+            console.log(`[Push] Pruning stale subscription for user ${userId}`);
             storedSubscriptions = storedSubscriptions.filter(
               (s) => s.subscription.endpoint !== sub.subscription.endpoint
             );
             hasStale = true;
           } else {
-            console.error(`Error sending Web Push to subscription:`, err.message);
+            console.error(`[Push] Error sending Web Push:`, err.message);
           }
         }
       });
@@ -294,7 +313,7 @@ async function startServer() {
 
       res.status(200).json({ success: true, count: userSubs.length });
     } catch (error: any) {
-      console.error("Error in send-push API execution:", error);
+      console.error("[Push] Error in send-push API execution:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -318,6 +337,7 @@ async function startServer() {
       const matchingSubs = storedSubscriptions.filter((s) => matchedUserIds.has(s.userId));
 
       if (matchingSubs.length === 0) {
+        console.log(`[Push] No push subscriptions for matched users:`, userIdsArray);
         return res.status(200).json({ success: true, message: "Matched users found, but no active push subscriptions" });
       }
 
@@ -330,21 +350,31 @@ async function startServer() {
         title,
         body,
         url: "/",
+        taskNum: shortNum,
+        tag: `task-${shortNum}`
       };
 
+      console.log(`[Push] Dispatching match push to ${matchingSubs.length} device subscriptions`);
       let hasStale = false;
       const sendPromises = matchingSubs.map(async (sub) => {
         try {
-          await webpush.sendNotification(sub.subscription, JSON.stringify(payload));
+          await webpush.sendNotification(
+            sub.subscription,
+            JSON.stringify(payload),
+            {
+              TTL: 86400,
+              urgency: "high"
+            }
+          );
         } catch (err: any) {
           if (err.statusCode === 410 || err.statusCode === 404) {
-            console.log(`Pruning stale subscription for user ${sub.userId}`);
+            console.log(`[Push] Pruning stale subscription for user ${sub.userId}`);
             storedSubscriptions = storedSubscriptions.filter(
               (s) => s.subscription.endpoint !== sub.subscription.endpoint
             );
             hasStale = true;
           } else {
-            console.error(`Error sending Match Web Push to subscription:`, err.message);
+            console.error(`[Push] Error sending Match Web Push:`, err.message);
           }
         }
       });
@@ -354,7 +384,7 @@ async function startServer() {
 
       res.status(200).json({ success: true, notifiedCount: matchingSubs.length });
     } catch (error: any) {
-      console.error("Error in send-matching-push API execution:", error);
+      console.error("[Push] Error in send-matching-push API execution:", error);
       res.status(500).json({ error: error.message });
     }
   });

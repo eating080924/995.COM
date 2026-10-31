@@ -68,31 +68,45 @@ async function subscribeUserToPush(userId: string): Promise<{ success: boolean; 
 
     const convertedVapidKey = urlBase64ToUint8Array(publicKey);
 
-    // 2. Unsubscribe any stale subscription to avoid "different applicationServerKey" conflict
-    try {
-      const existingSub = await registration.pushManager.getSubscription();
-      if (existingSub) {
-        await existingSub.unsubscribe();
+    // 2. Check for existing subscription to avoid unnecessary unsubscriptions
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
+      } catch (subErr: any) {
+        console.warn('Initial push subscription failed, attempting renewal:', subErr);
+        // Only if subscription failed (e.g. applicationServerKey changed), unsubscribe and retry
+        const staleSub = await registration.pushManager.getSubscription();
+        if (staleSub) {
+          await staleSub.unsubscribe().catch(() => {});
+        }
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey
+        });
       }
-    } catch (unsubErr) {
-      console.warn('Could not clean old push subscription:', unsubErr);
     }
 
-    // 3. Subscribe with current applicationServerKey
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: convertedVapidKey
-    });
+    if (!subscription) {
+      return { success: false, message: '無法向瀏覽器取得推播憑證' };
+    }
+
+    // 3. Serialize subscription cleanly for all browsers
+    const subJson = subscription.toJSON ? subscription.toJSON() : JSON.parse(JSON.stringify(subscription));
 
     // 4. Send subscription to backend with verified ID token
     let idToken: string | null = null;
     if (auth.currentUser) {
-      idToken = await auth.currentUser.getIdToken(true).catch(() => null);
+      idToken = await auth.currentUser.getIdToken().catch(() => null);
     }
     if (!idToken) {
       await new Promise(r => setTimeout(r, 600));
       if (auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken(true).catch(() => null);
+        idToken = await auth.currentUser.getIdToken().catch(() => null);
       }
     }
 
@@ -106,12 +120,12 @@ async function subscribeUserToPush(userId: string): Promise<{ success: boolean; 
       headers,
       body: JSON.stringify({
         userId,
-        subscription
+        subscription: subJson
       })
     });
 
     if (subRes.ok) {
-      console.log('Successfully subscribed user to background push notifications!');
+      console.log('Successfully registered push subscription with backend server!');
       return { success: true };
     } else {
       const errText = await subRes.text();
@@ -232,6 +246,9 @@ export function NotificationDropdown() {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  const isIos = typeof window !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const isStandalone = typeof window !== 'undefined' && (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true);
+
   const requestDesktopPermission = async () => {
     if (!('Notification' in window)) {
       alert('您的瀏覽器不支援通知功能');
@@ -268,13 +285,20 @@ export function NotificationDropdown() {
       }
       setIsPushSubscribed(true);
 
-      // 2. Obtain fresh ID token
-      const idToken = await auth.currentUser?.getIdToken(true);
+      // 2. Countdown 3 seconds so user can lock screen or go to background
+      setPushTestMessage({ 
+        text: '⏳ 倒數 3 秒後發送：請立即鎖定手機螢幕或切換至手機桌面，測試是否能收到背景推播！', 
+        success: true 
+      });
+      await new Promise(r => setTimeout(r, 3000));
+
+      // 3. Obtain fresh ID token
+      const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) {
         throw new Error('無法取得驗證憑證，請重新登入');
       }
 
-      // 3. Trigger test push via backend proxy
+      // 4. Trigger test push via backend proxy
       const response = await fetch('/api/send-push', {
         method: 'POST',
         headers: {
@@ -285,7 +309,7 @@ export function NotificationDropdown() {
           userId: user.uid,
           type: 'rpa_push',
           taskNum: 'TEST-PUSH',
-          taskContent: '🚀 這是一則推播測試訊息！您的瀏覽器與系統已成功接收到背景推播！',
+          taskContent: '🚀 這是一則推播測試訊息！您的瀏覽器與手機系統已成功接收到背景推播！',
           senderId: user.uid,
           senderName: '系統管理員',
         }),
@@ -293,7 +317,7 @@ export function NotificationDropdown() {
 
       const resData = await response.json();
       if (response.ok && resData.success) {
-        setPushTestMessage({ text: '🎉 測試推播已發送！請檢查桌面、手機通知欄或稍候片刻。', success: true });
+        setPushTestMessage({ text: '🎉 測試推播已發送至您的設備！請檢查手機鎖定畫面或通知欄。', success: true });
       } else {
         setPushTestMessage({ text: `發送失敗：${resData.error || resData.message || '未知錯誤'}`, success: false });
       }
@@ -501,6 +525,18 @@ export function NotificationDropdown() {
 
             {/* Desktop & Mobile Notification Request Banner */}
             <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs flex flex-col gap-2">
+              {/* iPhone iOS Specific Standalone Warning */}
+              {isIos && !isStandalone && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 leading-relaxed shadow-xs">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-800 mb-1">
+                    <span>🍎 iPhone (iOS) 背景推播特別提醒</span>
+                  </div>
+                  <p className="text-amber-700">
+                    您目前在 Safari 瀏覽器中。依 Apple 官方限制，<strong>必須點選 Safari 底部「分享 📤」按鈕並選擇「加入主畫面 ➕」</strong>，從桌面的 App 圖示開啟，才能在<strong>手機鎖定或背景</strong>時收到即時推播！
+                  </p>
+                </div>
+              )}
+
               {desktopPermission === 'default' ? (
                 <div className="flex flex-col gap-1.5 font-semibold text-slate-700">
                   <span>🔔 開啟「瀏覽器通知」，隨時接收任務承接與結案即時通知！</span>
@@ -508,7 +544,7 @@ export function NotificationDropdown() {
                     onClick={requestDesktopPermission}
                     className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg self-start transition-all shadow-sm active:scale-95"
                   >
-                    啟用桌面通知
+                    啟用桌面與背景通知
                   </button>
                 </div>
               ) : desktopPermission === 'granted' ? (
@@ -518,7 +554,7 @@ export function NotificationDropdown() {
                       <span>🟢 瀏覽器推播已啟用</span>
                       {isPushSubscribed && (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
-                          背景已連線
+                          背景推播已連線
                         </span>
                       )}
                     </div>
@@ -526,27 +562,27 @@ export function NotificationDropdown() {
                       onClick={handleTestPushNotification}
                       disabled={isTestingPush}
                       className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                      title="發送一則推播至本裝置以測試功能"
+                      title="發送測試推播（點擊後鎖定螢幕測試背景推播）"
                     >
                       {isTestingPush ? (
                         <>
                           <Loader2 size={11} className="animate-spin text-red-500" />
-                          <span>測試中...</span>
+                          <span>發送倒數中...</span>
                         </>
                       ) : (
                         <>
                           <Send size={11} className="text-red-500" />
-                          <span>發送測試推播</span>
+                          <span>測試背景推播</span>
                         </>
                       )}
                     </button>
                   </div>
                   {pushTestMessage && (
                     <div className={cn(
-                      "p-2 rounded-lg text-[10px] font-bold flex items-center gap-1.5 border animate-fade-in",
+                      "p-2.5 rounded-lg text-[11px] font-bold flex items-start gap-1.5 border animate-fade-in leading-relaxed",
                       pushTestMessage.success ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
                     )}>
-                      {pushTestMessage.success ? <CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> : <AlertCircle size={12} className="shrink-0 text-red-600" />}
+                      {pushTestMessage.success ? <CheckCircle2 size={13} className="shrink-0 text-emerald-600 mt-0.5" /> : <AlertCircle size={13} className="shrink-0 text-red-600 mt-0.5" />}
                       <span>{pushTestMessage.text}</span>
                     </div>
                   )}
