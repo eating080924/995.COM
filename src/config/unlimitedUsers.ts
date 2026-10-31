@@ -16,10 +16,7 @@ export const UNLIMITED_UIDS: string[] = [
 
 // Add Email Addresses that should be exempt from any limits (case-insensitive)
 export const UNLIMITED_EMAILS: string[] = [
-  "eating080924@gmail.com",
-  "very790804@gmail.com",
-  "ooi12361@gmail.com",
-  "a0939633109@gmail.com" // Main administrator or tester
+  "eating080924@gmail.com"
 ];
 
 /**

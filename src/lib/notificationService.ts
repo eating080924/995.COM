@@ -12,7 +12,7 @@ import {
   getDocs,
   deleteDoc
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import { handleFirestoreError, OperationType } from './errorHandler';
 
 export interface AppNotification {
@@ -61,11 +61,18 @@ export async function sendNotification(params: {
 
     // Also trigger background Web Push notification via backend API proxy
     try {
+      const currentUser = auth.currentUser;
+      const idToken = currentUser ? await currentUser.getIdToken().catch(() => null) : null;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (idToken) {
+        headers['Authorization'] = `Bearer ${idToken}`;
+      }
+
       fetch('/api/send-push', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify(params),
       }).catch((err) => console.warn('Background Web Push call failed:', err));
     } catch (pushErr) {
