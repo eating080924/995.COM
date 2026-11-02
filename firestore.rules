@@ -61,12 +61,29 @@ service cloud.firestore {
         (
           !isOwner(userId) &&
           (
-            // Rating and stats calculation
-            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 
-              'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 
-              'successfulTasksSinceViolation', 'updatedAt'
-            ]) ||
+            // Rating and stats calculation (bounded and non-decreasing)
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'completedAsAcceptorCount', 'completedAsRequesterCount', 'ratingCount', 
+                'ratingSum', 'averageRating', 'broadcastCount', 'earnedTitles', 
+                'successfulTasksSinceViolation', 'updatedAt'
+              ]) &&
+              request.resource.data.get('averageRating', 0) >= 0 &&
+              request.resource.data.get('averageRating', 0) <= 5 &&
+              request.resource.data.get('ratingCount', 0) >= resource.data.get('ratingCount', 0) &&
+              request.resource.data.get('completedAsAcceptorCount', 0) >= resource.data.get('completedAsAcceptorCount', 0) &&
+              request.resource.data.get('completedAsRequesterCount', 0) >= resource.data.get('completedAsRequesterCount', 0)
+            ) ||
+            // Credit repair upon 3 consecutive successful completions (decrements violation by 1)
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'noContactViolationsCount', 'noContactStrikes', 'penaltyStatus', 
+                'bannedUntil', 'successfulTasksSinceViolation', 'updatedAt'
+              ]) &&
+              resource.data.get('noContactViolationsCount', 0) > 0 &&
+              request.resource.data.noContactViolationsCount == resource.data.get('noContactViolationsCount', 0) - 1 &&
+              request.resource.data.successfulTasksSinceViolation == 0
+            ) ||
             // Strictly verified strike increment (+1 only) when an owner reports no contact
             (
               request.resource.data.diff(resource.data).affectedKeys().hasOnly([
