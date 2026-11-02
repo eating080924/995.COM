@@ -26,6 +26,9 @@ export interface AppNotification {
   senderName: string;
   read: boolean;
   createdAt: any;
+  customTitle?: string;
+  category?: string;
+  region?: string;
 }
 
 /**
@@ -39,6 +42,9 @@ export async function sendNotification(params: {
   taskContent: string;
   senderId: string;
   senderName: string;
+  customTitle?: string;
+  category?: string;
+  region?: string;
 }) {
   if (!params.userId || params.userId === params.senderId) {
     // No need to send notification to oneself
@@ -47,7 +53,7 @@ export async function sendNotification(params: {
 
   try {
     const notificationsRef = collection(db, 'notifications');
-    await addDoc(notificationsRef, {
+    const docData: any = {
       userId: params.userId,
       type: params.type,
       taskId: params.taskId,
@@ -57,7 +63,12 @@ export async function sendNotification(params: {
       senderName: params.senderName,
       read: false,
       createdAt: serverTimestamp(),
-    });
+    };
+    if (params.customTitle) docData.customTitle = params.customTitle;
+    if (params.category) docData.category = params.category;
+    if (params.region) docData.region = params.region;
+
+    await addDoc(notificationsRef, docData);
 
     // Also trigger background Web Push notification via backend API proxy
     try {
@@ -112,6 +123,9 @@ export function subscribeNotifications(
         senderName: data.senderName,
         read: data.read || false,
         createdAt: data.createdAt,
+        customTitle: data.customTitle,
+        category: data.category,
+        region: data.region,
       });
     });
     onUpdate(notifications);
@@ -128,12 +142,16 @@ export async function markAsRead(notificationId: string) {
     const docRef = doc(db, 'notifications', notificationId);
     await updateDoc(docRef, { read: true });
   } catch (error) {
-    console.error('Failed to mark notification as read:', error);
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, `notifications/${notificationId}`);
+    } catch (e) {
+      console.error('Failed to mark notification as read:', e);
+    }
   }
 }
 
 /**
- * Mark all user notifications as read.
+ * Mark all notifications for a user as read.
  */
 export async function markAllAsRead(userId: string) {
   try {
@@ -143,15 +161,20 @@ export async function markAllAsRead(userId: string) {
       where('userId', '==', userId),
       where('read', '==', false)
     );
-    const querySnapshot = await getDocs(q);
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return;
+
     const batch = writeBatch(db);
-    querySnapshot.forEach((docSnap) => {
+    snapshot.forEach((docSnap) => {
       batch.update(docSnap.ref, { read: true });
     });
     await batch.commit();
   } catch (error) {
-    console.error('Failed to mark all notifications as read:', error);
-    handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, 'notifications');
+    } catch (e) {
+      console.error('Failed to mark all notifications as read:', e);
+    }
   }
 }
 
@@ -163,8 +186,11 @@ export async function deleteNotification(notificationId: string) {
     const docRef = doc(db, 'notifications', notificationId);
     await deleteDoc(docRef);
   } catch (error) {
-    console.error('Failed to delete notification:', error);
-    handleFirestoreError(error, OperationType.DELETE, `notifications/${notificationId}`);
+    try {
+      handleFirestoreError(error, OperationType.DELETE, `notifications/${notificationId}`);
+    } catch (e) {
+      console.error('Failed to delete notification:', e);
+    }
   }
 }
 
@@ -178,14 +204,19 @@ export async function clearAllNotifications(userId: string) {
       notificationsRef,
       where('userId', '==', userId)
     );
-    const querySnapshot = await getDocs(q);
+    const snapshot = await getDocs(q);
+    if (snapshot.empty) return;
+
     const batch = writeBatch(db);
-    querySnapshot.forEach((docSnap) => {
+    snapshot.forEach((docSnap) => {
       batch.delete(docSnap.ref);
     });
     await batch.commit();
   } catch (error) {
-    console.error('Failed to clear all notifications:', error);
-    handleFirestoreError(error, OperationType.DELETE, 'notifications');
+    try {
+      handleFirestoreError(error, OperationType.DELETE, 'notifications');
+    } catch (e) {
+      console.error('Failed to clear all notifications:', e);
+    }
   }
 }

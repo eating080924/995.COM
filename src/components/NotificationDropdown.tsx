@@ -8,9 +8,10 @@ import {
   clearAllNotifications,
   AppNotification 
 } from '../lib/notificationService';
-import { Bell, Check, Trash2, ShieldAlert, Sparkles, AlertCircle, X, ExternalLink, Send, Loader2, CheckCircle2 } from 'lucide-react';
+import { Bell, Check, Trash2, AlertCircle, X, Send, Loader2, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth } from '../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 import { cn } from '../lib/utils';
 
 function urlBase64ToUint8Array(base64String: string) {
@@ -26,6 +27,145 @@ function urlBase64ToUint8Array(base64String: string) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+function getEndpointDocId(userId: string, endpoint: string): string {
+  try {
+    const base64 = window.btoa(endpoint).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    return `${userId}_${base64.slice(-90)}`;
+  } catch {
+    const clean = endpoint.replace(/[^a-zA-Z0-9]/g, '').slice(-80);
+    return `${userId}_${clean}`;
+  }
+}
+
+function parseNotificationDisplay(n: AppNotification) {
+  const content = n.taskContent || '';
+
+  // 1. 承接者已回報主動聯繫
+  if (content.includes('已回報與您取得聯繫') || content.includes('已回報主動聯繫') || content.includes('主動聯繫委託人')) {
+    return {
+      title: '承接者已回報主動聯繫 📞',
+      color: 'bg-teal-50 text-teal-700 border-teal-100',
+      badgeColor: 'bg-teal-500',
+      desc: `承接超人 ${n.senderName} 已回報主動與您取得聯繫，任務正式啟動。`,
+      showQuoteBox: false,
+    };
+  }
+
+  // 2. 承接者已回報任務完工
+  if (content.includes('已回報「任務已完成」') || content.includes('已回報任務完成') || content.includes('已回報完工')) {
+    return {
+      title: '承接者已回報任務完工 🏁',
+      color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+      badgeColor: 'bg-emerald-500',
+      desc: `超人 ${n.senderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`,
+      showQuoteBox: false,
+    };
+  }
+
+  // 3. 已向承接者提出「完工異議」
+  if (content.includes('您已向承接者提出') || content.includes('已向承接者提出')) {
+    return {
+      title: '已向承接者提出「完工異議」 ⚖️',
+      color: 'bg-amber-50 text-amber-700 border-amber-100',
+      badgeColor: 'bg-amber-500',
+      desc: `您已對任務 [${n.taskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`,
+      showQuoteBox: true,
+    };
+  }
+
+  // 4. 委託者已提出「完工異議」
+  if (content.includes('完工異議') || content.includes('提出異議')) {
+    return {
+      title: '委託者已提出「完工異議」 ⚠️',
+      color: 'bg-rose-50 text-rose-700 border-rose-100',
+      badgeColor: 'bg-rose-500',
+      desc: `委託人 ${n.senderName} 對任務 [${n.taskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`,
+      showQuoteBox: true,
+    };
+  }
+
+  switch (n.type) {
+    case 'task_accepted':
+      return {
+        title: '任務被承接 🚀',
+        color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+        badgeColor: 'bg-emerald-500',
+        desc: `您的委託任務已被 ${n.senderName} 承接，請留意後續進度。`,
+        showQuoteBox: true,
+      };
+    case 'task_unaccepted':
+      return {
+        title: '任務取消承接 ⚠️',
+        color: 'bg-amber-50 text-amber-700 border-amber-100',
+        badgeColor: 'bg-amber-500',
+        desc: `承接人 ${n.senderName} 取消承接您的委託任務，任務已重新開放。`,
+        showQuoteBox: true,
+      };
+    case 'task_completed':
+      return {
+        title: '委託完成結案 🎉',
+        color: 'bg-blue-50 text-blue-700 border-blue-100',
+        badgeColor: 'bg-blue-500',
+        desc: `您承接的委託任務已由委託人 ${n.senderName} 審核完成並結案！`,
+        showQuoteBox: true,
+      };
+    case 'agent_invite':
+      return {
+        title: '任務委託邀請 💌',
+        color: 'bg-red-50 text-red-700 border-red-100',
+        badgeColor: 'bg-red-500',
+        desc: `委託人 ${n.senderName} 向您發出了專屬委託邀請！請點擊查看。`,
+        showQuoteBox: true,
+      };
+    case 'rpa_push':
+      return {
+        title: `${n.senderName || '系統管理員'} 📢`,
+        color: 'bg-red-50 text-red-700 border-red-100',
+        badgeColor: 'bg-red-500',
+        desc: content || `${n.senderName} 向您發出了專屬推播訊息！`,
+        showQuoteBox: false,
+      };
+    case 'broadcast': {
+      // Parse legacy format if present: "🎯 任務推薦：【其他】在【苗栗縣】有新發布任務「2026...」：\ntest"
+      let parsedCategory = n.category;
+      let parsedRegion = n.region;
+      let cleanContent = content;
+
+      const legacyMatch = content.match(/任務推薦：【([^】]+)】在【([^】]+)】有新發布任務[^：]*：\s*([\s\S]*)/);
+      if (legacyMatch) {
+        parsedCategory = parsedCategory || legacyMatch[1];
+        parsedRegion = parsedRegion || legacyMatch[2];
+        cleanContent = legacyMatch[3].trim();
+      } else if (cleanContent.startsWith('🎯 任務推薦：') || cleanContent.startsWith('任務推薦：')) {
+        const splitIdx = cleanContent.indexOf('：\n');
+        if (splitIdx !== -1) {
+          cleanContent = cleanContent.slice(splitIdx + 2).trim();
+        }
+      }
+
+      const title =
+        n.customTitle ||
+        (parsedCategory && parsedRegion ? `🎯【${parsedCategory}・${parsedRegion}】新任務` : '🎯 新任務推薦');
+
+      return {
+        title,
+        color: 'bg-purple-50 text-purple-700 border-purple-100',
+        badgeColor: 'bg-purple-500',
+        desc: cleanContent || '有符合您偏好的新發布任務',
+        showQuoteBox: false,
+      };
+    }
+    default:
+      return {
+        title: '系統通知 📢',
+        color: 'bg-slate-50 text-slate-700 border-slate-100',
+        badgeColor: 'bg-slate-500',
+        desc: content || `任務 [${n.taskNum}] 有狀態異動。`,
+        showQuoteBox: false,
+      };
+  }
 }
 
 async function subscribeUserToPush(userId: string): Promise<{ success: boolean; message?: string }> {
@@ -68,31 +208,58 @@ async function subscribeUserToPush(userId: string): Promise<{ success: boolean; 
 
     const convertedVapidKey = urlBase64ToUint8Array(publicKey);
 
-    // 2. Unsubscribe any stale subscription to avoid "different applicationServerKey" conflict
-    try {
-      const existingSub = await registration.pushManager.getSubscription();
-      if (existingSub) {
-        await existingSub.unsubscribe();
+    // 2. Reuse existing valid subscription if present; only resubscribe if needed
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey,
+        });
+      } catch (subErr) {
+        console.warn('Initial push subscribe failed, renewing subscription:', subErr);
+        const oldSub = await registration.pushManager.getSubscription();
+        if (oldSub) {
+          await oldSub.unsubscribe().catch(() => {});
+        }
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: convertedVapidKey,
+        });
       }
-    } catch (unsubErr) {
-      console.warn('Could not clean old push subscription:', unsubErr);
     }
 
-    // 3. Subscribe with current applicationServerKey
-    const subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: convertedVapidKey
-    });
+    if (!subscription) {
+      return { success: false, message: '無法取得瀏覽器推播憑證' };
+    }
 
-    // 4. Send subscription to backend with verified ID token
+    const subJson = subscription.toJSON ? subscription.toJSON() : JSON.parse(JSON.stringify(subscription));
+
+    // 3. Persist directly to Firestore `push_subscriptions` so it survives any server restart
+    let savedToFirestore = false;
+    try {
+      if (subJson && subJson.endpoint) {
+        const docId = getEndpointDocId(userId, subJson.endpoint);
+        await setDoc(doc(db, 'push_subscriptions', docId), {
+          userId,
+          subscription: subJson,
+          updatedAt: new Date().toISOString(),
+        });
+        savedToFirestore = true;
+      }
+    } catch (fsErr) {
+      console.warn('Could not save push subscription directly to Firestore:', fsErr);
+    }
+
+    // 4. Also register with backend memory/disk cache
     let idToken: string | null = null;
     if (auth.currentUser) {
-      idToken = await auth.currentUser.getIdToken(true).catch(() => null);
+      idToken = await auth.currentUser.getIdToken().catch(() => null);
     }
     if (!idToken) {
-      await new Promise(r => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 500));
       if (auth.currentUser) {
-        idToken = await auth.currentUser.getIdToken(true).catch(() => null);
+        idToken = await auth.currentUser.getIdToken().catch(() => null);
       }
     }
 
@@ -106,12 +273,11 @@ async function subscribeUserToPush(userId: string): Promise<{ success: boolean; 
       headers,
       body: JSON.stringify({
         userId,
-        subscription
-      })
+        subscription: subJson,
+      }),
     });
 
-    if (subRes.ok) {
-      console.log('Successfully subscribed user to background push notifications!');
+    if (subRes.ok || savedToFirestore) {
       return { success: true };
     } else {
       const errText = await subRes.text();
@@ -146,7 +312,7 @@ export function NotificationDropdown() {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js')
         .then((reg) => {
-          console.log('Service Worker registered successfully with scope:', reg.scope);
+          reg.update().catch(() => {});
         })
         .catch((err) => {
           console.error('Service Worker registration failed:', err);
@@ -163,7 +329,7 @@ export function NotificationDropdown() {
     }
   }, [user, desktopPermission]);
 
-  // Subscribe to real-time notifications with foreground alert integration
+  // Subscribe to real-time notifications with clean foreground alert integration
   useEffect(() => {
     if (!user) {
       setNotifications([]);
@@ -172,25 +338,37 @@ export function NotificationDropdown() {
 
     let isInitialLoad = true;
     const unsubscribe = subscribeNotifications(user.uid, (updatedList) => {
-      // Trigger foreground/local desktop notification if new notification arrives after load
+      // Trigger foreground notification if a new unread notification arrives while page is open
       if (!isInitialLoad && updatedList.length > 0) {
         const latest = updatedList[0];
         if (!latest.read && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
           try {
+            const details = parseNotificationDisplay(latest);
+            const rawNum = latest.taskNum || 'N/A';
+            const shortNum = rawNum.length > 6 ? rawNum.slice(-5) : rawNum;
+            const notifTitle = details.title;
+            const notifBody = latest.taskNum && latest.taskNum !== 'TEST-PUSH'
+              ? `${details.desc}\n（編號：#${shortNum}）`
+              : details.desc;
+            const notifTag = `task-${shortNum}`;
+
             if (navigator.serviceWorker && navigator.serviceWorker.controller) {
               navigator.serviceWorker.controller.postMessage({
                 type: 'SHOW_NOTIFICATION',
-                title: latest.taskContent?.slice(0, 30) || '任務進度更新 🚀',
+                title: notifTitle,
                 options: {
-                  body: latest.taskContent || '',
-                  icon: '/icon-192.png',
-                  badge: '/icon-192.png',
-                }
+                  body: notifBody,
+                  icon: '/logo.png',
+                  badge: '/logo.png',
+                  tag: notifTag,
+                  renotify: true,
+                },
               });
             } else {
-              new Notification(latest.taskContent?.slice(0, 30) || '任務進度更新 🚀', {
-                body: latest.taskContent || '',
-                icon: '/icon-192.png',
+              new Notification(notifTitle, {
+                body: notifBody,
+                icon: '/logo.png',
+                tag: notifTag,
               });
             }
           } catch (e) {
@@ -202,7 +380,6 @@ export function NotificationDropdown() {
       setNotifications(updatedList);
     });
 
-    // Check desktop notification permission
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setDesktopPermission(Notification.permission);
     }
@@ -225,14 +402,21 @@ export function NotificationDropdown() {
 
   if (!user) return null;
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  const isIos =
+    typeof window !== 'undefined' &&
+    (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true);
 
   const requestDesktopPermission = async () => {
     if (!('Notification' in window)) {
       alert('您的瀏覽器不支援通知功能');
       return;
     }
-    
+
     try {
       const permission = await Notification.requestPermission();
       setDesktopPermission(permission);
@@ -254,22 +438,32 @@ export function NotificationDropdown() {
     setPushTestMessage(null);
 
     try {
-      // 1. Ensure push subscription is active
+      // 1. Ensure push subscription is active and saved to Firestore + server
       const subRes = await subscribeUserToPush(user.uid);
       if (!subRes.success) {
-        setPushTestMessage({ text: `推播訂閱失敗：${subRes.message || '無法連線至推播伺服器'}`, success: false });
+        setPushTestMessage({
+          text: `推播訂閱失敗：${subRes.message || '無法連線至推播伺服器'}`,
+          success: false,
+        });
         setIsTestingPush(false);
         return;
       }
       setIsPushSubscribed(true);
 
-      // 2. Obtain fresh ID token
-      const idToken = await auth.currentUser?.getIdToken(true);
+      // 2. Countdown 3 seconds so user can lock phone screen or switch to background
+      setPushTestMessage({
+        text: '⏳ 倒數 3 秒後發送：請立即「按下電源鍵鎖定手機螢幕」或「切回手機桌面」，測試背景橫幅推播！',
+        success: true,
+      });
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // 3. Obtain fresh ID token
+      const idToken = await auth.currentUser?.getIdToken();
       if (!idToken) {
         throw new Error('無法取得驗證憑證，請重新登入');
       }
 
-      // 3. Trigger test push via backend proxy
+      // 4. Trigger test push via backend proxy
       const response = await fetch('/api/send-push', {
         method: 'POST',
         headers: {
@@ -278,9 +472,12 @@ export function NotificationDropdown() {
         },
         body: JSON.stringify({
           userId: user.uid,
-          type: 'rpa_push',
-          taskNum: 'TEST-PUSH',
-          taskContent: '🚀 這是一則推播測試訊息！您的瀏覽器與系統已成功接收到背景推播！',
+          type: 'broadcast',
+          taskNum: '2026110299501',
+          customTitle: '🎯【跑腿代購・苗栗縣】新任務',
+          category: '跑腿代購',
+          region: '苗栗縣',
+          taskContent: '幫買熱拿鐵一杯送到車站大廳（背景推播測試成功！）',
           senderId: user.uid,
           senderName: '系統管理員',
         }),
@@ -288,111 +485,21 @@ export function NotificationDropdown() {
 
       const resData = await response.json();
       if (response.ok && resData.success) {
-        setPushTestMessage({ text: '🎉 測試推播已發送！請檢查桌面、手機通知欄或稍候片刻。', success: true });
+        setPushTestMessage({
+          text: '🎉 測試推播已發送至您的手機！請查看手機鎖定畫面或通知欄。',
+          success: true,
+        });
       } else {
-        setPushTestMessage({ text: `發送失敗：${resData.error || resData.message || '未知錯誤'}`, success: false });
+        setPushTestMessage({
+          text: `發送失敗：${resData.error || resData.message || '未知錯誤'}`,
+          success: false,
+        });
       }
     } catch (err: any) {
       console.error('Test push error:', err);
       setPushTestMessage({ text: `測試推播異常：${err.message || '連線逾時'}`, success: false });
     } finally {
       setIsTestingPush(false);
-    }
-  };
-
-  const getNotificationDetails = (n: AppNotification) => {
-    const content = n.taskContent || '';
-
-    // 1. 承接者已回報主動聯繫
-    if (content.includes('已回報與您取得聯繫') || content.includes('已回報主動聯繫') || content.includes('主動聯繫委託人')) {
-      return {
-        title: '承接者已回報主動聯繫 📞',
-        color: 'bg-teal-50 text-teal-700 border-teal-100',
-        badgeColor: 'bg-teal-500',
-        desc: `承接超人 ${n.senderName} 已回報主動與您取得聯繫，任務正式啟動。`,
-      };
-    }
-
-    // 2. 承接者已回報任務完工
-    if (content.includes('已回報「任務已完成」') || content.includes('已回報任務完成') || content.includes('已回報完工')) {
-      return {
-        title: '承接者已回報任務完工 🏁',
-        color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-        badgeColor: 'bg-emerald-500',
-        desc: `超人 ${n.senderName} 已回報「任務已完成」，請前往確認並進行驗收結案。`,
-      };
-    }
-
-    // 3. 已向承接者提出「完工異議」
-    if (content.includes('您已向承接者提出') || content.includes('已向承接者提出')) {
-      return {
-        title: '已向承接者提出「完工異議」 ⚖️',
-        color: 'bg-amber-50 text-amber-700 border-amber-100',
-        badgeColor: 'bg-amber-500',
-        desc: `您已對任務 [${n.taskNum}] 提出【完工異議】，請與承接者保持聯繫、友好協商。`,
-      };
-    }
-
-    // 4. 委託者已提出「完工異議」
-    if (content.includes('完工異議') || content.includes('提出異議')) {
-      return {
-        title: '委託者已提出「完工異議」 ⚠️',
-        color: 'bg-rose-50 text-rose-700 border-rose-100',
-        badgeColor: 'bg-rose-500',
-        desc: `委託人 ${n.senderName} 對任務 [${n.taskNum}] 提出【完工異議】，請主動聯繫委託人進行協商。`,
-      };
-    }
-
-    switch (n.type) {
-      case 'task_accepted':
-        return {
-          title: '任務被承接 🚀',
-          color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
-          badgeColor: 'bg-emerald-500',
-          desc: `您的委託任務 [${n.taskNum}] 已被 ${n.senderName} 承接，請留意後續進度。`,
-        };
-      case 'task_unaccepted':
-        return {
-          title: '任務取消承接 ⚠️',
-          color: 'bg-amber-50 text-amber-700 border-amber-100',
-          badgeColor: 'bg-amber-500',
-          desc: `承接人 ${n.senderName} 取消承接您的委託任務 [${n.taskNum}]，任務已重新開放。`,
-        };
-      case 'task_completed':
-        return {
-          title: '委託完成結案 🎉',
-          color: 'bg-blue-50 text-blue-700 border-blue-100',
-          badgeColor: 'bg-blue-500',
-          desc: `您承接的委託任務 [${n.taskNum}] 已由委託人 ${n.senderName} 審核完成並結案！`,
-        };
-      case 'agent_invite':
-        return {
-          title: '任務委託邀請 💌',
-          color: 'bg-red-50 text-red-700 border-red-100',
-          badgeColor: 'bg-red-500',
-          desc: `委託人 ${n.senderName} 向您發出了專屬委託邀請！請點擊查看。`,
-        };
-      case 'rpa_push':
-        return {
-          title: '推播訊息 📢',
-          color: 'bg-red-50 text-red-700 border-red-100',
-          badgeColor: 'bg-red-500',
-          desc: `${n.senderName} 向您發出了專屬推播訊息！請點擊查看。`,
-        };
-      case 'broadcast':
-        return {
-          title: '任務推薦 🎯',
-          color: 'bg-purple-50 text-purple-700 border-purple-100',
-          badgeColor: 'bg-purple-500',
-          desc: n.taskContent || `有符合您偏好的新發布任務：[${n.taskNum}]`,
-        };
-      default:
-        return {
-          title: '系統通知 📢',
-          color: 'bg-slate-50 text-slate-700 border-slate-100',
-          badgeColor: 'bg-slate-500',
-          desc: n.taskContent || `任務 [${n.taskNum}] 有狀態異動。`,
-        };
     }
   };
 
@@ -405,7 +512,7 @@ export function NotificationDropdown() {
         aria-label="Notifications"
         id="notification-bell-btn"
       >
-        <Bell size={18} className={unreadCount > 0 ? "animate-swing" : ""} />
+        <Bell size={18} className={unreadCount > 0 ? 'animate-swing' : ''} />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-black text-white ring-2 ring-white animate-bounce-short">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -429,7 +536,7 @@ export function NotificationDropdown() {
                 <Bell size={16} className="text-slate-500" />
                 <span className="font-bold text-slate-800 text-sm">通知中心</span>
               </div>
-              
+
               <div className="flex items-center gap-2.5">
                 {unreadCount > 0 && (
                   <button
@@ -487,14 +594,25 @@ export function NotificationDropdown() {
 
             {/* Desktop & Mobile Notification Request Banner */}
             <div className="p-3 bg-slate-50 border-b border-slate-200 text-xs flex flex-col gap-2">
+              {isIos && !isStandalone && (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 text-[11px] text-amber-900 leading-relaxed shadow-xs">
+                  <div className="font-bold flex items-center gap-1.5 text-amber-800 mb-1">
+                    <span>🍎 iPhone (iOS) 背景推播必備設定</span>
+                  </div>
+                  <p className="text-amber-700">
+                    iPhone 的 Safari 網頁在鎖定畫面下會被系統凍結。請點擊底部<strong>「分享 📤」➡️「加入主畫面 ➕」</strong>，從桌面開啟 App 才能在鎖屏時收到推播！
+                  </p>
+                </div>
+              )}
+
               {desktopPermission === 'default' ? (
                 <div className="flex flex-col gap-1.5 font-semibold text-slate-700">
-                  <span>🔔 開啟「瀏覽器通知」，隨時接收任務承接與結案即時通知！</span>
+                  <span>🔔 開啟「瀏覽器通知」，隨時接收任務承接與新任務背景推播！</span>
                   <button
                     onClick={requestDesktopPermission}
                     className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg self-start transition-all shadow-sm active:scale-95"
                   >
-                    啟用桌面通知
+                    啟用桌面與背景通知
                   </button>
                 </div>
               ) : desktopPermission === 'granted' ? (
@@ -504,7 +622,7 @@ export function NotificationDropdown() {
                       <span>🟢 瀏覽器推播已啟用</span>
                       {isPushSubscribed && (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-md">
-                          背景已連線
+                          雲端背景已連線
                         </span>
                       )}
                     </div>
@@ -512,27 +630,35 @@ export function NotificationDropdown() {
                       onClick={handleTestPushNotification}
                       disabled={isTestingPush}
                       className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-[11px] font-bold rounded-lg flex items-center gap-1 shadow-xs transition-all active:scale-95 disabled:opacity-50"
-                      title="發送一則推播至本裝置以測試功能"
+                      title="點擊後於 3 秒內鎖定手機螢幕，測試背景推播"
                     >
                       {isTestingPush ? (
                         <>
                           <Loader2 size={11} className="animate-spin text-red-500" />
-                          <span>測試中...</span>
+                          <span>倒數 3 秒...</span>
                         </>
                       ) : (
                         <>
                           <Send size={11} className="text-red-500" />
-                          <span>發送測試推播</span>
+                          <span>測試背景推播</span>
                         </>
                       )}
                     </button>
                   </div>
                   {pushTestMessage && (
-                    <div className={cn(
-                      "p-2 rounded-lg text-[10px] font-bold flex items-center gap-1.5 border animate-fade-in",
-                      pushTestMessage.success ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
-                    )}>
-                      {pushTestMessage.success ? <CheckCircle2 size={12} className="shrink-0 text-emerald-600" /> : <AlertCircle size={12} className="shrink-0 text-red-600" />}
+                    <div
+                      className={cn(
+                        'p-2.5 rounded-lg text-[11px] font-bold flex items-start gap-1.5 border animate-fade-in leading-relaxed',
+                        pushTestMessage.success
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                          : 'bg-red-50 text-red-700 border-red-200'
+                      )}
+                    >
+                      {pushTestMessage.success ? (
+                        <CheckCircle2 size={13} className="shrink-0 text-emerald-600 mt-0.5" />
+                      ) : (
+                        <AlertCircle size={13} className="shrink-0 text-red-600 mt-0.5" />
+                      )}
                       <span>{pushTestMessage.text}</span>
                     </div>
                   )}
@@ -550,9 +676,7 @@ export function NotificationDropdown() {
                   onClick={() => setShowPwaGuide(!showPwaGuide)}
                   className="w-full flex items-center justify-between text-slate-500 hover:text-slate-800 font-bold transition-colors"
                 >
-                  <span className="flex items-center gap-1">
-                    📱 如何在手機未開啟/背景時收到通知？
-                  </span>
+                  <span className="flex items-center gap-1">📱 如何在手機鎖定/背景時收到通知？</span>
                   <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-md">
                     {showPwaGuide ? '收合' : '展開說明'}
                   </span>
@@ -567,24 +691,28 @@ export function NotificationDropdown() {
                       className="overflow-hidden text-slate-600 space-y-2 mt-2 bg-white p-2.5 rounded-lg border border-slate-100 font-normal leading-relaxed"
                     >
                       <p className="font-semibold text-slate-800 text-[11px]">
-                        手機系統（特別是 iOS 16.4+ 與 Android）為了保障隱私及省電，<span className="text-red-500 font-bold">必須將此平台「安裝至主畫面」</span>才能在背景接收即時通知：
+                        手機系統（特別是 iOS 16.4+ 與 Android）為了保障隱私及省電，
+                        <span className="text-red-500 font-bold">必須將此平台「安裝至主畫面」</span>
+                        才能在背景與鎖定螢幕接收即時通知：
                       </p>
-                      
+
                       <div className="space-y-1.5 text-[11px]">
                         <div className="flex items-start gap-1">
                           <span className="font-bold text-red-500">Apple iOS:</span>
                           <span>
-                            使用 Safari 瀏覽器，點擊底部或頂部的<strong>「分享 📤」</strong>按鈕，選單中點選<strong>「加入主畫面 ➕」</strong>。從桌面打開安裝好的 App，並依提示允許通知。
+                            使用 Safari 瀏覽器，點擊底部或頂部的<strong>「分享 📤」</strong>按鈕，選單中點選
+                            <strong>「加入主畫面 ➕」</strong>。從桌面打開安裝好的 App，並依提示允許通知。
                           </span>
                         </div>
                         <div className="flex items-start gap-1">
                           <span className="font-bold text-red-500">Android:</span>
                           <span>
-                            使用 Chrome 瀏覽器，點擊右上角<strong>「選單 ⁝」</strong>，點選<strong>「安裝應用程式」</strong>或<strong>「加到主畫面」</strong>。打開桌面的 App 並允許通知。
+                            使用 Chrome 瀏覽器，點擊右上角<strong>「選單 ⁝」</strong>，點選
+                            <strong>「安裝應用程式」</strong>或<strong>「加到主畫面」</strong>。打開桌面的 App 並允許通知。
                           </span>
                         </div>
                       </div>
-                      
+
                       <div className="text-[10px] text-slate-400 border-t border-slate-100 pt-1 flex items-center gap-1">
                         <span>🛡️ 本平台已內建 PWA 服務，加入主畫面即可享有完整的原生 App 背景通知體驗！</span>
                       </div>
@@ -604,7 +732,8 @@ export function NotificationDropdown() {
                 </div>
               ) : (
                 notifications.map((n) => {
-                  const details = getNotificationDetails(n);
+                  const details = parseNotificationDisplay(n);
+                  const shortNum = n.taskNum && n.taskNum.length > 6 ? n.taskNum.slice(-5) : n.taskNum;
                   return (
                     <div
                       key={n.id}
@@ -613,7 +742,9 @@ export function NotificationDropdown() {
                           await markAsRead(n.id);
                         }
                         setIsOpen(false);
-                        const event = new CustomEvent('navigate-to-task', { detail: { taskId: n.taskId, taskNum: n.taskNum, type: n.type } });
+                        const event = new CustomEvent('navigate-to-task', {
+                          detail: { taskId: n.taskId, taskNum: n.taskNum, type: n.type },
+                        });
                         window.dispatchEvent(event);
                       }}
                       className={`p-4 transition-all duration-200 cursor-pointer flex gap-3 ${
@@ -622,7 +753,11 @@ export function NotificationDropdown() {
                     >
                       {/* Left Dot Indicator */}
                       <div className="flex flex-col items-center pt-1.5">
-                        <span className={`h-2.5 w-2.5 rounded-full ${details.badgeColor} ${n.read ? 'opacity-30' : 'animate-pulse'}`} />
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${details.badgeColor} ${
+                            n.read ? 'opacity-30' : 'animate-pulse'
+                          }`}
+                        />
                       </div>
 
                       {/* Content */}
@@ -631,7 +766,9 @@ export function NotificationDropdown() {
                           <span className="text-xs font-black text-slate-800">{details.title}</span>
                           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                             {!n.read && (
-                              <span className="text-[9px] bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full shrink-0">新</span>
+                              <span className="text-[9px] bg-red-500 text-white font-extrabold px-1.5 py-0.5 rounded-full shrink-0">
+                                新
+                              </span>
                             )}
                             <button
                               onClick={async () => {
@@ -644,16 +781,14 @@ export function NotificationDropdown() {
                             </button>
                           </div>
                         </div>
-                        <p className="text-xs font-semibold text-slate-600 leading-relaxed">
-                          {details.desc}
-                        </p>
-                        {n.taskContent && (
+                        <p className="text-xs font-semibold text-slate-600 leading-relaxed">{details.desc}</p>
+                        {details.showQuoteBox && n.taskContent && (
                           <div className="text-[10px] text-slate-400 bg-slate-50 p-2 rounded-lg border border-slate-100 line-clamp-2 italic">
                             「{n.taskContent}」
                           </div>
                         )}
                         <div className="text-[9px] text-slate-400 font-bold flex items-center justify-between pt-1">
-                          <span>編號：{n.taskNum}</span>
+                          <span>編號：#{shortNum}</span>
                         </div>
                       </div>
                     </div>

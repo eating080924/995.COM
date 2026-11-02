@@ -272,9 +272,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // 7. Push Subscriptions Collection (Secured - Server-only / No client access)
+    // 7. Push Subscriptions Collection (Authenticated access only; VAPID private key stays on server)
     match /push_subscriptions/{subId} {
-      allow read, write: if false;
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn();
     }
 
     // 8. Violation Logs Collection

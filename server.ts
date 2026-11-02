@@ -23,6 +23,7 @@ try {
 
 const PROJECT_ID = firebaseConfig?.projectId || "com-515d4";
 const DATABASE_ID = firebaseConfig?.firestoreDatabaseId || "db995com";
+const FIREBASE_API_KEY = firebaseConfig?.apiKey || "AIzaSyClrfh8Z4TE98tmBmMKCj_HkV-Pf_NOzFE";
 
 // Initialize Firebase Admin SDK for token verification & server-side Firestore access
 const adminApp = getApps().length ? getApps()[0] : initializeApp({ projectId: PROJECT_ID });
@@ -42,6 +43,69 @@ const DEFAULT_STABLE_VAPID = {
 let vapidKeys = { ...DEFAULT_STABLE_VAPID };
 let storedSubscriptions: Array<{ userId: string; subscription: any }> = [];
 
+// Convert flat JS object to Firestore REST fields helper
+function toFirestoreFields(obj: any): any {
+  const fields: any = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val === null || val === undefined) continue;
+    if (typeof val === "string") {
+      fields[key] = { stringValue: val };
+    } else if (typeof val === "number") {
+      fields[key] = { doubleValue: val };
+    } else if (typeof val === "boolean") {
+      fields[key] = { booleanValue: val };
+    } else if (val && typeof val === "object") {
+      if (Array.isArray(val)) {
+        fields[key] = {
+          arrayValue: {
+            values: val.map((item) => {
+              if (typeof item === "string") return { stringValue: item };
+              if (typeof item === "number") return { doubleValue: item };
+              if (typeof item === "boolean") return { booleanValue: item };
+              return { mapValue: { fields: toFirestoreFields(item) } };
+            }),
+          },
+        };
+      } else {
+        fields[key] = { mapValue: { fields: toFirestoreFields(val) } };
+      }
+    }
+  }
+  return fields;
+}
+
+// Convert Firestore REST fields helper to flat JS object
+function fromFirestoreFields(fields: any): any {
+  if (!fields) return {};
+  const obj: any = {};
+  for (const [key, valueObj] of Object.entries(fields)) {
+    const vo = valueObj as any;
+    if (vo === null || vo === undefined) continue;
+    if ("stringValue" in vo) {
+      obj[key] = vo.stringValue;
+    } else if ("doubleValue" in vo) {
+      obj[key] = Number(vo.doubleValue);
+    } else if ("integerValue" in vo) {
+      obj[key] = Number(vo.integerValue);
+    } else if ("booleanValue" in vo) {
+      obj[key] = vo.booleanValue;
+    } else if ("mapValue" in vo) {
+      obj[key] = fromFirestoreFields(vo.mapValue.fields);
+    } else if ("arrayValue" in vo) {
+      const vals = vo.arrayValue.values || [];
+      obj[key] = vals.map((v: any) => {
+        if ("stringValue" in v) return v.stringValue;
+        if ("doubleValue" in v) return Number(v.doubleValue);
+        if ("integerValue" in v) return Number(v.integerValue);
+        if ("booleanValue" in v) return v.booleanValue;
+        if ("mapValue" in v) return fromFirestoreFields(v.mapValue.fields);
+        return v;
+      });
+    }
+  }
+  return obj;
+}
+
 function loadSubscriptionsFromDisk(): Array<{ userId: string; subscription: any }> {
   try {
     if (fs.existsSync(SUBSCRIPTIONS_FILE)) {
@@ -57,14 +121,13 @@ function loadSubscriptionsFromDisk(): Array<{ userId: string; subscription: any 
 function saveSubscriptionsToDisk() {
   try {
     fs.writeFileSync(SUBSCRIPTIONS_FILE, JSON.stringify(storedSubscriptions, null, 2), "utf8");
-  } catch (e) {
+  } catch {
     // Non-fatal in read-only or ephemeral containers
   }
 }
 
 async function initVapid() {
   try {
-    // 1. Check environment variables first
     if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
       vapidKeys = {
         publicKey: process.env.VAPID_PUBLIC_KEY,
@@ -72,7 +135,6 @@ async function initVapid() {
       };
       console.log("VAPID keys loaded from environment variables.");
     } else if (fs.existsSync(VAPID_FILE)) {
-      // 2. Check server-side local file if valid
       try {
         const saved = JSON.parse(fs.readFileSync(VAPID_FILE, "utf8"));
         if (saved && saved.publicKey && saved.privateKey) {
@@ -88,12 +150,10 @@ async function initVapid() {
         vapidKeys = { ...DEFAULT_STABLE_VAPID };
       }
     } else {
-      // 3. Use deterministic stable VAPID keypair
       vapidKeys = { ...DEFAULT_STABLE_VAPID };
       console.log("Stable production VAPID keys loaded.");
     }
 
-    // Persist stable keys locally if empty
     try {
       fs.writeFileSync(VAPID_FILE, JSON.stringify(vapidKeys, null, 2), "utf8");
     } catch {}
@@ -144,6 +204,7 @@ async function authenticateUser(req: express.Request, res: express.Response, nex
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
     (req as any).user = decodedToken;
+    (req as any).idToken = token;
     next();
   } catch (err: any) {
     console.warn("Failed to verify Firebase ID token in API:", err.message);
@@ -151,52 +212,134 @@ async function authenticateUser(req: express.Request, res: express.Response, nex
   }
 }
 
-// Helper: Fetch user subscriptions from Admin Firestore (Cloud Run) + local memory/disk cache
-async function getSubscriptionsForUsers(userIds: string[]): Promise<Array<{ id: string; userId: string; subscription: any; delete: () => Promise<void> }>> {
+// Helper: Fetch user subscriptions from Firestore (via authenticated REST + Admin SDK) + local cache
+async function getSubscriptionsForUsers(
+  userIds: string[],
+  idToken?: string
+): Promise<Array<{ id: string; userId: string; subscription: any; delete: () => Promise<void> }>> {
   const results: Array<{ id: string; userId: string; subscription: any; delete: () => Promise<void> }> = [];
   const targetSet = new Set(userIds);
 
-  // 1. Try Firebase Admin SDK (works natively in Cloud Run with service account privileges)
-  try {
-    const chunkSize = 30;
-    for (let i = 0; i < userIds.length; i += chunkSize) {
-      const chunk = userIds.slice(i, i + chunkSize);
-      const snap = await adminDb
-        .collection("push_subscriptions")
-        .where("userId", "in", chunk)
-        .get();
-
-      snap.forEach((docSnap) => {
-        const data = docSnap.data();
-        if (data && data.subscription && data.subscription.endpoint) {
-          if (!results.some((r) => r.subscription.endpoint === data.subscription.endpoint)) {
-            results.push({
-              id: docSnap.id,
-              userId: data.userId,
-              subscription: data.subscription,
-              delete: async () => {
-                try {
-                  await adminDb.collection("push_subscriptions").doc(docSnap.id).delete();
-                } catch {}
-                storedSubscriptions = storedSubscriptions.filter(
-                  (s) => s.subscription.endpoint !== data.subscription.endpoint
-                );
-                saveSubscriptionsToDisk();
+  // 1. Query Firestore via authenticated REST API (works in both AI Studio Preview and Cloud Run)
+  if (idToken) {
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents:runQuery?key=${FIREBASE_API_KEY}`;
+      const chunkSize = 30;
+      for (let i = 0; i < userIds.length; i += chunkSize) {
+        const chunk = userIds.slice(i, i + chunkSize);
+        const queryBody = {
+          structuredQuery: {
+            from: [{ collectionId: "push_subscriptions" }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: "userId" },
+                op: "IN",
+                value: {
+                  arrayValue: {
+                    values: chunk.map((uid) => ({ stringValue: uid })),
+                  },
+                },
               },
-            });
+            },
+          },
+        };
+
+        const queryRes = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${idToken}`,
+          },
+          body: JSON.stringify(queryBody),
+        });
+
+        if (queryRes.ok) {
+          const rows = await queryRes.json();
+          if (Array.isArray(rows)) {
+            for (const r of rows) {
+              if (r.document && r.document.fields) {
+                const flat = fromFirestoreFields(r.document.fields);
+                if (flat.subscription && flat.subscription.endpoint) {
+                  const docPath = r.document.name;
+                  const docId = docPath.substring(docPath.lastIndexOf("/") + 1);
+                  if (!results.some((existing) => existing.subscription.endpoint === flat.subscription.endpoint)) {
+                    results.push({
+                      id: docId,
+                      userId: flat.userId,
+                      subscription: flat.subscription,
+                      delete: async () => {
+                        try {
+                          const delUrl = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+                          await fetch(delUrl, {
+                            method: "DELETE",
+                            headers: { Authorization: `Bearer ${idToken}` },
+                          });
+                        } catch {}
+                        storedSubscriptions = storedSubscriptions.filter(
+                          (s) => s.subscription.endpoint !== flat.subscription.endpoint
+                        );
+                        saveSubscriptionsToDisk();
+                      },
+                    });
+                  }
+                }
+              }
+            }
           }
         }
-      });
+      }
+    } catch (restErr) {
+      console.warn("Authenticated Firestore REST query fallback:", restErr);
     }
-  } catch {
-    // Expected in sandboxed preview environments without cross-project Admin IAM; falls back to memory/disk cache
   }
 
-  // 2. Merge with local memory/disk subscriptions
+  // 2. Also try Firebase Admin SDK (if running in Cloud Run with IAM privileges)
+  if (results.length === 0) {
+    try {
+      const chunkSize = 30;
+      for (let i = 0; i < userIds.length; i += chunkSize) {
+        const chunk = userIds.slice(i, i + chunkSize);
+        const snap = await adminDb
+          .collection("push_subscriptions")
+          .where("userId", "in", chunk)
+          .get();
+
+        snap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && data.subscription && data.subscription.endpoint) {
+            if (!results.some((r) => r.subscription.endpoint === data.subscription.endpoint)) {
+              results.push({
+                id: docSnap.id,
+                userId: data.userId,
+                subscription: data.subscription,
+                delete: async () => {
+                  try {
+                    await adminDb.collection("push_subscriptions").doc(docSnap.id).delete();
+                  } catch {}
+                  storedSubscriptions = storedSubscriptions.filter(
+                    (s) => s.subscription.endpoint !== data.subscription.endpoint
+                  );
+                  saveSubscriptionsToDisk();
+                },
+              });
+            }
+          }
+        });
+      }
+    } catch {
+      // Expected in preview sandbox
+    }
+  }
+
+  // 3. Merge with local memory/disk subscriptions
   const localMatches = storedSubscriptions.filter((s) => targetSet.has(s.userId));
   for (let i = 0; i < localMatches.length; i++) {
     const s = localMatches[i];
-    if (s.subscription && s.subscription.endpoint && !results.some((r) => r.subscription.endpoint === s.subscription.endpoint)) {
+    if (
+      s.subscription &&
+      s.subscription.endpoint &&
+      !results.some((r) => r.subscription.endpoint === s.subscription.endpoint)
+    ) {
       results.push({
         id: `local_${i}`,
         userId: s.userId,
@@ -259,11 +402,12 @@ async function startServer() {
     }
 
     const callerUid = (req as any).user.uid;
+    const idToken = (req as any).idToken;
     if (callerUid !== userId) {
       return res.status(403).json({ error: "Forbidden: Cannot register subscription for another user" });
     }
 
-    // 1. Always save to local memory & disk cache
+    // 1. Save to local memory & disk cache
     storedSubscriptions = storedSubscriptions.filter(
       (s) => !(s.userId === userId && s.subscription.endpoint === subscription.endpoint)
     );
@@ -273,17 +417,27 @@ async function startServer() {
     }
     saveSubscriptionsToDisk();
 
-    // 2. Also persist to Firestore via Admin SDK (when running in Cloud Run with service account)
+    // 2. Persist to Firestore `push_subscriptions` using authenticated REST API
+    const endpointHash = Buffer.from(subscription.endpoint).toString("base64url").slice(-90);
+    const docId = `${userId}_${endpointHash}`;
     try {
-      const endpointHash = Buffer.from(subscription.endpoint).toString("base64url").slice(-100);
-      const docId = `${userId}_${endpointHash}`;
-      await adminDb.collection("push_subscriptions").doc(docId).set({
-        userId,
-        subscription,
-        updatedAt: new Date().toISOString(),
+      const url = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/${DATABASE_ID}/documents/push_subscriptions/${docId}?key=${FIREBASE_API_KEY}`;
+      await fetch(url, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          fields: toFirestoreFields({
+            userId,
+            subscription,
+            updatedAt: new Date().toISOString(),
+          }),
+        }),
       });
     } catch {
-      // Non-fatal in preview environment; local cache handles delivery
+      // Fallback to local cache
     }
 
     res.status(200).json({ success: true, count: storedSubscriptions.length });
@@ -298,6 +452,7 @@ async function startServer() {
 
     const callerUid = (req as any).user.uid;
     const callerEmail = (req as any).user.email;
+    const idToken = (req as any).idToken;
     const isSystemAdmin = callerEmail === "eating080924@gmail.com";
 
     // Anti-spoofing check: senderId must match authenticated caller or system admin
@@ -311,7 +466,7 @@ async function startServer() {
     const safeSenderName = senderName || "平台用戶";
 
     try {
-      const subscriptions = await getSubscriptionsForUsers([userId]);
+      const subscriptions = await getSubscriptionsForUsers([userId], idToken);
       if (subscriptions.length === 0) {
         return res.status(200).json({
           success: false,
@@ -363,14 +518,25 @@ async function startServer() {
         title = `${safeSenderName} 📢`;
         body = safeTaskContent || "您有一條新的推播訊息！點擊查看詳情。";
       } else if (type === "broadcast") {
-        title = customTitle || (category && region ? `🎯【${category}・${region}】新任務` : "新任務推薦 🎯");
+        let parsedCategory = category;
+        let parsedRegion = region;
         let cleanContent = safeTaskContent;
-        if (cleanContent.startsWith("🎯 任務推薦：")) {
+
+        const legacyMatch = safeTaskContent.match(/任務推薦：【([^】]+)】在【([^】]+)】有新發布任務[^：]*：\s*([\s\S]*)/);
+        if (legacyMatch) {
+          parsedCategory = parsedCategory || legacyMatch[1];
+          parsedRegion = parsedRegion || legacyMatch[2];
+          cleanContent = legacyMatch[3].trim();
+        } else if (cleanContent.startsWith("🎯 任務推薦：") || cleanContent.startsWith("任務推薦：")) {
           const splitIdx = cleanContent.indexOf("：\n");
           if (splitIdx !== -1) {
-            cleanContent = cleanContent.slice(splitIdx + 2);
+            cleanContent = cleanContent.slice(splitIdx + 2).trim();
           }
         }
+
+        title =
+          customTitle ||
+          (parsedCategory && parsedRegion ? `🎯【${parsedCategory}・${parsedRegion}】新任務` : "🎯 新任務推薦");
         const trimmed = cleanContent.slice(0, 50) + (cleanContent.length > 50 ? "..." : "");
         body = `${trimmed}\n（編號：#${shortTaskNum}）`;
       }
@@ -414,6 +580,7 @@ async function startServer() {
       return res.status(400).json({ error: "Missing required details: category, region, and taskNum are mandatory" });
     }
 
+    const idToken = (req as any).idToken;
     const safeTaskContent = taskContent || "";
     const userIdsArray = Array.isArray(userIds) ? userIds : [];
     if (userIdsArray.length === 0) {
@@ -422,7 +589,7 @@ async function startServer() {
 
     try {
       const matchedUserIds = Array.from(new Set<string>(userIdsArray));
-      const subscriptions = await getSubscriptionsForUsers(matchedUserIds);
+      const subscriptions = await getSubscriptionsForUsers(matchedUserIds, idToken);
 
       if (subscriptions.length === 0) {
         return res.status(200).json({ success: true, message: "Matched users found, but no active push subscriptions" });
